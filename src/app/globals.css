@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Cairo", ui-sans-serif, system-ui, sans-serif;
+  --color-ink: #0f1c2e;
+  --color-navy: #1e3a5f;
+  --color-navy-deep: #132744;
+  --color-emerald: #0f766e;
+  --color-emerald-soft: #14b8a6;
+  --color-gold: #d97706;
+  --color-gold-soft: #fbbf24;
+  --color-sand: #f7f3eb;
+  --color-cream: #fffaf3;
+  --color-mist: #e8eef6;
+  --color-rose-warn: #be123c;
+}
+
+html {
+  direction: rtl;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(20, 184, 166, 0.12), transparent 55%),
+    radial-gradient(900px 500px at -10% 20%, rgba(217, 119, 6, 0.1), transparent 50%),
+    linear-gradient(180deg, #f7f3eb 0%, #eef3f8 45%, #f7f3eb 100%);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: rgba(15, 118, 110, 0.25);
+}
+
+@layer utilities {
+  .glass {
+    background: rgba(255, 250, 243, 0.82);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(30, 58, 95, 0.08);
+  }
+
+  .safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}

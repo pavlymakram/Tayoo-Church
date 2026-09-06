@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tayoo
+      POSTGRES_PASSWORD: tayoo
+      POSTGRES_DB: tayoo
+    ports:
+      - "5432:5432"
+    volumes:
+      - tayoo_pg:/var/lib/postgresql/data
+
+volumes:
+  tayoo_pg:

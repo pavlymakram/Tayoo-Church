@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Local: sqlite | Production: change to postgresql and update DATABASE_URL
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Church {
+  id          String   @id @default(uuid())
+  name        String
+  licenseKey  String   @unique @map("license_key")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  users             User[]
+  eventTypes        EventType[]
+  pointTransactions PointTransaction[]
+
+  @@map("churches")
+}
+
+model User {
+  id              String   @id @default(uuid())
+  churchId        String?  @map("church_id")
+  role            String   @default("STUDENT") // STUDENT | SERVANT | CHURCH_ADMIN | SUPER_ADMIN
+  fullName        String   @map("full_name")
+  phone           String
+  secondaryPhone  String?  @map("secondary_phone")
+  address         String?
+  grade           String?
+  birthDate       DateTime? @map("birth_date")
+  confessionFather String? @map("confession_father")
+  fatherJob       String?  @map("father_job")
+  motherJob       String?  @map("mother_job")
+  isMotherWorking Boolean  @default(false) @map("is_mother_working")
+  qrCodeId        String   @unique @default(uuid()) @map("qr_code_id")
+  passwordHash    String?  @map("password_hash")
+  pinHash         String?  @map("pin_hash")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  church              Church?            @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  studentTransactions PointTransaction[] @relation("StudentTransactions")
+  servantTransactions PointTransaction[] @relation("ServantTransactions")
+
+  @@unique([churchId, phone])
+  @@index([churchId])
+  @@index([fullName])
+  @@index([qrCodeId])
+  @@map("users")
+}
+
+model EventType {
+  id            String   @id @default(uuid())
+  churchId      String   @map("church_id")
+  title         String
+  defaultPoints Int      @default(0) @map("default_points")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  church       Church             @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  transactions PointTransaction[]
+
+  @@index([churchId])
+  @@map("event_types")
+}
+
+model PointTransaction {
+  id            String   @id @default(uuid())
+  churchId      String   @map("church_id")
+  studentId     String   @map("student_id")
+  servantId     String   @map("servant_id")
+  eventTypeId   String   @map("event_type_id")
+  pointsAmount  Int      @map("points_amount")
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  church    Church    @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  student   User      @relation("StudentTransactions", fields: [studentId], references: [id], onDelete: Cascade)
+  servant   User      @relation("ServantTransactions", fields: [servantId], references: [id], onDelete: Cascade)
+  eventType EventType @relation(fields: [eventTypeId], references: [id], onDelete: Restrict)
+
+  @@index([churchId])
+  @@index([studentId])
+  @@index([createdAt])
+  @@map("point_transactions")
+}
