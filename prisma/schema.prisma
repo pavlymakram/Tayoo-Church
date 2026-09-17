@@ -2,22 +2,26 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// Local: sqlite | Production: change to postgresql and update DATABASE_URL
+// PostgreSQL is required for durable serverless/Vercel deployments.
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Church {
   id          String   @id @default(uuid())
   name        String
   licenseKey  String   @unique @map("license_key")
+  defaultMassPoints    Int      @default(5) @map("default_mass_points")
+  defaultServicePoints Int      @default(3) @map("default_service_points")
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at")
 
   users             User[]
   eventTypes        EventType[]
   pointTransactions PointTransaction[]
+  accessCodes       AccessCode[]
 
   @@map("churches")
 }
@@ -28,6 +32,7 @@ model User {
   role            String   @default("STUDENT") // STUDENT | SERVANT | CHURCH_ADMIN | SUPER_ADMIN
   fullName        String   @map("full_name")
   phone           String
+  email           String?
   secondaryPhone  String?  @map("secondary_phone")
   address         String?
   grade           String?
@@ -39,17 +44,43 @@ model User {
   qrCodeId        String   @unique @default(uuid()) @map("qr_code_id")
   passwordHash    String?  @map("password_hash")
   pinHash         String?  @map("pin_hash")
+  roleSecurityCodeHash String? @map("role_security_code_hash")
   createdAt       DateTime @default(now()) @map("created_at")
 
   church              Church?            @relation(fields: [churchId], references: [id], onDelete: Cascade)
   studentTransactions PointTransaction[] @relation("StudentTransactions")
   servantTransactions PointTransaction[] @relation("ServantTransactions")
+  accessCodeLogin      AccessCode?       @relation("AccessCodeLogin")
 
   @@unique([churchId, phone])
   @@index([churchId])
+  @@index([churchId, role], map: "idx_users_church_role")
+  @@index([email])
   @@index([fullName])
   @@index([qrCodeId])
   @@map("users")
+}
+
+model AccessCode {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  role        String
+  churchId    String?  @map("church_id")
+  loginUserId String   @unique @map("login_user_id")
+  passwordHash String  @map("password_hash")
+  maxUses     Int?     @map("max_uses")
+  usageCount  Int      @default(0) @map("usage_count")
+  expiresAt   DateTime? @map("expires_at")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdById String   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  church    Church? @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  loginUser User    @relation("AccessCodeLogin", fields: [loginUserId], references: [id], onDelete: Cascade)
+
+  @@index([churchId, role])
+  @@index([isActive, expiresAt])
+  @@map("access_codes")
 }
 
 model EventType {
@@ -85,5 +116,7 @@ model PointTransaction {
   @@index([churchId])
   @@index([studentId])
   @@index([createdAt])
+  @@index([studentId, churchId], map: "idx_transactions_student_church")
+  @@index([createdAt(sort: Desc)], map: "idx_transactions_created")
   @@map("point_transactions")
 }

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { BrandMark, PageShell } from "@/components/layout/shell";
 import { Button, Input } from "@/components/ui/form";
 import { useAuth } from "@/components/providers/auth-provider";
+import { AccessCodeManager } from "@/components/admin/access-code-manager";
 
 type ChurchRow = {
   id: string;
@@ -125,6 +126,19 @@ export default function SuperAdminPage() {
     }
   }
 
+  async function deleteChurch(c: ChurchRow) {
+    const confirmation = window.prompt(`حذف نهائي: اكتب اسم الكنيسة كما هو لتأكيد حذف كل بياناتها:\n${c.name}`);
+    if (confirmation === null) return;
+    const res = await fetch("/api/super-admin/churches", {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: c.id, confirmation }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast.error(data.error || "تعذر حذف الكنيسة"); return; }
+    toast.success("تم حذف الكنيسة وكل بياناتها نهائياً");
+    await load();
+  }
+
   if (needLogin || (!user && !loading)) {
     return (
       <PageShell>
@@ -172,6 +186,8 @@ export default function SuperAdminPage() {
         </div>
       </form>
 
+      <AccessCodeManager superAdmin churches={churches.map((c) => ({ id: c.id, name: c.name }))} />
+
       <div className="space-y-3">
         {churches.map((c) => (
           <div key={c.id} className="glass rounded-3xl p-5">
@@ -189,6 +205,9 @@ export default function SuperAdminPage() {
                 onClick={() => void toggleChurch(c)}
               >
                 {c.isActive ? "إيقاف" : "تفعيل"}
+              </Button>
+              <Button size="sm" variant="danger" onClick={() => void deleteChurch(c)}>
+                حذف الكنيسة نهائياً
               </Button>
             </div>
           </div>

@@ -32,15 +32,15 @@ export default function ServantHomePage() {
   useEffect(() => {
     if (loading) return;
     if (!user) {
-      router.replace("/auth/staff");
+      router.replace("/auth/login");
       return;
     }
     if (user.role === "STUDENT") {
-      router.replace("/student");
+      router.replace("/student/dashboard");
       return;
     }
     if (user.role === "SUPER_ADMIN") {
-      router.replace("/super-admin");
+      router.replace("/super-admin/tenants");
       return;
     }
     void (async () => {
@@ -71,10 +71,8 @@ export default function ServantHomePage() {
           </div>
         </div>
 
-        <Link
-          href="/servant/scan"
-          className="mb-6 flex items-center justify-between gap-4 rounded-[2rem] bg-[var(--color-emerald)] px-5 py-6 text-white shadow-xl shadow-teal-900/20"
-        >
+        <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        <Link href="/servant/quick-scan?kind=mass" className="rounded-[2rem] bg-[var(--color-emerald)] px-5 py-5 text-white shadow-xl shadow-teal-900/20">
           <div>
             <p className="text-xl font-black">مسح QR وإضافة نقط</p>
             <p className="mt-1 text-sm text-teal-50">افتح الكاميرا أو ابحث بالاسم</p>
@@ -83,6 +81,9 @@ export default function ServantHomePage() {
             <ScanLine className="h-7 w-7" />
           </div>
         </Link>
+        <Link href="/servant/quick-scan?kind=service" className="rounded-[2rem] bg-[var(--color-navy)] px-5 py-5 text-white shadow-xl shadow-slate-900/20"><p className="text-lg font-black">مسح سريع: الخدمة</p><p className="mt-1 text-sm text-slate-200">حضور ونقاط تلقائية</p></Link>
+        <Link href="/servant/scan" className="rounded-[2rem] bg-[var(--color-gold)] px-5 py-5 text-[var(--color-navy)] shadow-xl"><p className="text-lg font-black">مسح مخصص / هدايا</p><p className="mt-1 text-sm">نقاط ومناسبة مخصصة</p></Link>
+        </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard icon={Users} label="المخدومين" value={stats?.totalStudents ?? "—"} />

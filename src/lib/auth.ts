@@ -10,7 +10,9 @@ const SESSION_DAYS = 30;
 
 function getSecret() {
   const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error("JWT_SECRET is not set");
+  if (!secret || secret.length < 32) {
+    throw new Error("JWT_SECRET must contain at least 32 characters");
+  }
   return new TextEncoder().encode(secret);
 }
 

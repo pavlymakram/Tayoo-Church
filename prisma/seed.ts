@@ -15,9 +15,16 @@ function licenseKey() {
 }
 
 async function main() {
-  const phone = process.env.SUPER_ADMIN_PHONE || "01000000000";
-  const password = process.env.SUPER_ADMIN_PASSWORD || "SuperAdmin@2026";
+  const phone = process.env.SUPER_ADMIN_PHONE;
+  const password = process.env.SUPER_ADMIN_PASSWORD;
   const name = process.env.SUPER_ADMIN_NAME || "مدير النظام";
+  const seedDemo = process.env.SEED_DEMO === "true";
+  if (!phone || !password || password.length < 16) {
+    throw new Error("Set SUPER_ADMIN_PHONE and a unique SUPER_ADMIN_PASSWORD of at least 16 characters.");
+  }
+  if (seedDemo && process.env.NODE_ENV === "production") {
+    throw new Error("Demo seeding is not allowed in production.");
+  }
 
   const existingSuper = await prisma.user.findFirst({
     where: { role: "SUPER_ADMIN", phone },
@@ -37,6 +44,9 @@ async function main() {
   } else {
     console.log("✓ Super admin already exists");
   }
+
+  // Production bootstrap stops here: demo records are local-development only.
+  if (!seedDemo) return;
 
   let church = await prisma.church.findFirst({
     where: { name: "كنيسة الملاك ميخائيل (تجريبي)" },

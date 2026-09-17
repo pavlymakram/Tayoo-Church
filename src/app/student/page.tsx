@@ -16,6 +16,7 @@ type Tx = {
   pointsAmount: number;
   note: string | null;
   eventTitle: string;
+  servantName?: string;
   createdAtLabel: string;
 };
 
@@ -130,7 +131,10 @@ export default function StudentHomePage() {
                   {t.eventTitle}
                   {t.note ? ` — ${t.note}` : ""}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">{t.createdAtLabel}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {t.createdAtLabel}
+                  {t.servantName ? ` · بواسطة ${t.servantName}` : ""}
+                </p>
               </div>
               <span
                 className={`shrink-0 rounded-full px-3 py-1 text-sm font-black ${

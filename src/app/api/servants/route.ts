@@ -42,7 +42,9 @@ export async function POST(req: Request) {
       role: data.role,
       fullName: data.fullName.trim(),
       phone: data.phone.trim(),
+      email: data.email?.trim() || null,
       passwordHash: await hashPassword(data.password),
+      roleSecurityCodeHash: data.securityCode?.trim() ? await hashPassword(data.securityCode.trim()) : null,
     },
   });
 

@@ -1,69 +1,25 @@
-# طايو — نظام إدارة الخدمة والنقاط
+# Tayoo Church Platform
 
-**Tayoo Church Platform** is a multi-tenant Progressive Web App for churches to manage student attendance, Tayoo spiritual points, QR scanning, visitations, and Excel exports.
+Next.js 15 / Prisma / PostgreSQL platform for church attendance, QR scans, Tayoo points, and tenant management.
 
-## Stack
+## Setup and deployment
 
-- **Next.js 15** (App Router) + TypeScript + Tailwind CSS v4
-- **Prisma** ORM (SQLite for local demo; PostgreSQL-ready)
-- **JWT** httpOnly cookie sessions
-- **html5-qrcode** + **qrcode.react**
-- **ExcelJS** visitation export
-- **Framer Motion** + **Lucide** + **Sonner**
-- Arabic RTL + **Cairo** font
-- PWA (`manifest.json` + service worker)
+Follow the complete guide in [DEPLOYMENT.md](./DEPLOYMENT.md), located at `C:\Users\pavly\tayoo-church-platform\DEPLOYMENT.md`. It covers local setup, PostgreSQL initialization, secure environment variables, GitHub, Vercel Hobby, automatic HTTPS, updates and rollback.
 
-## Quick start
+**Important:** free plans have eligibility rules and quotas, not a permanent uptime guarantee. Vercel Hobby is for personal non-commercial use; confirm eligibility for an organization/church deployment. Supabase Free can pause inactive databases. Choose free plans directly rather than paid integrations or Pro trials.
 
-```bash
-cd tayoo-church-platform
-npm install
-npx prisma db push
-npm run db:seed
-npm run dev
+## Checks
+
+Run from `C:\Users\pavly\tayoo-church-platform` after configuring the ignored local environment file:
+
+```powershell
+npm ci
+npx prisma validate
+npm run lint
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Production uses external PostgreSQL; local SQLite files are not durable on Vercel. Database URLs and JWT secrets remain server-only environment variables. The default seed creates only the super-admin from supplied credentials; demo seeding is opt-in for local development and blocked in production mode.
 
-### Demo accounts (from seed)
+The deployment guide includes remaining dependency audit findings and the distinction between successful builds and live database verification.
 
-| Role | Phone | Password / PIN |
-|------|-------|----------------|
-| Super Admin | `01000000000` | `SuperAdmin@2026` |
-| Church Admin | `01111111111` | `Admin@1234` |
-| Servant | `01222222222` | `Servant@1234` |
-| Student | `01555555551` | PIN `1234` |
-
-The demo church **license key** is printed in the seed output (also visible in Church Admin → Settings / Super Admin portal).
-
-After the included seed run:
-
-`TAYOO-AC2E6377-0F063786`
-
-## Multi-tenancy
-
-Every business record is scoped by `church_id`. Staff APIs always filter by the session `churchId`. Churches cannot read or mutate each other’s data. Super Admin manages licenses only.
-
-## Production PostgreSQL
-
-1. Start Postgres: `docker compose up -d`
-2. In `prisma/schema.prisma`, set `provider = "postgresql"`
-3. Set `DATABASE_URL` in `.env` to your Postgres URL
-4. Run `npx prisma migrate dev --name init` then `npm run db:seed`
-
-## Main routes
-
-- `/` — Landing
-- `/auth/student` — Student register / login
-- `/auth/staff` — Servant / admin login
-- `/student` — Points + giant ID/QR button
-- `/servant` — Staff dashboard
-- `/servant/scan` — Camera QR + award points
-- `/servant/students` — Visitation grid + Excel export
-- `/servant/events` — Event types (admin)
-- `/servant/settings` — License key + servants (admin)
-- `/super-admin` — Master license portal
-
-## License model
-
-One-time license key per church, created in Super Admin. Students register with that key. Admins can deactivate a church license system-wide.

@@ -6,7 +6,6 @@ import {
   Church,
   Home,
   LogOut,
-  QrCode,
   ScanLine,
   Settings2,
   Users,
@@ -63,13 +62,13 @@ export function StaffBottomNav() {
   const items = [
     { href: "/servant", label: "الرئيسية", icon: Home },
     { href: "/servant/scan", label: "مسح", icon: ScanLine },
-    { href: "/servant/students", label: "المخدومين", icon: Users },
+    { href: "/servant/students", label: "المستخدمين", icon: Users },
     ...(isAdmin
       ? [
           { href: "/servant/events", label: "المناسبات", icon: CalendarDays },
           { href: "/servant/settings", label: "إعدادات", icon: Settings2 },
         ]
-      : [{ href: "/servant/students", label: "التصدير", icon: QrCode }]),
+      : []),
   ];
 
   return (

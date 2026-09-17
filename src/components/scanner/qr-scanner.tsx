@@ -8,9 +8,13 @@ import { Button } from "@/components/ui/form";
 export function QrScanner({
   onScan,
   onError,
+  autoStart = false,
+  keepOpen = false,
 }: {
-  onScan: (value: string) => void;
+  onScan: (value: string) => void | Promise<void>;
   onError?: (msg: string) => void;
+  autoStart?: boolean;
+  keepOpen?: boolean;
 }) {
   const [active, setActive] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
@@ -19,6 +23,7 @@ export function QrScanner({
   const regionId = "tayoo-qr-reader";
 
   useEffect(() => {
+    if (autoStart) void start();
     return () => {
       void stop();
     };
@@ -37,8 +42,10 @@ export function QrScanner({
         (decoded) => {
           if (handled.current) return;
           handled.current = true;
-          onScan(decoded.trim());
-          void stop();
+          void Promise.resolve(onScan(decoded.trim())).finally(() => {
+            if (keepOpen) window.setTimeout(() => { handled.current = false; }, 700);
+            else void stop();
+          });
         },
         () => undefined
       );

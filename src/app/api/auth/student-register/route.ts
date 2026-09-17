@@ -1,12 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { jsonError, jsonOk, parseBody, readJson } from "@/lib/api";
 import {
-  clearSessionCookie,
   createSessionToken,
-  getSession,
   hashPassword,
   setSessionCookie,
-  verifyPassword,
 } from "@/lib/auth";
 import { studentRegisterSchema } from "@/lib/validators";
 import { sanitizeUser } from "@/lib/sanitize";

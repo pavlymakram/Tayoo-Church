@@ -5,7 +5,7 @@ const COOKIE = "tayoo_session";
 
 async function getRole(req: NextRequest) {
   const token = req.cookies.get(COOKIE)?.value;
-  if (!token || !process.env.JWT_SECRET) return null;
+  if (!token || !process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) return null;
   try {
     const { payload } = await jwtVerify(
       token,
@@ -22,19 +22,26 @@ export async function middleware(req: NextRequest) {
   const role = await getRole(req);
 
   if (pathname.startsWith("/student")) {
-    if (!role) return NextResponse.redirect(new URL("/auth/student", req.url));
+    if (!role) return NextResponse.redirect(new URL("/", req.url));
     if (role !== "STUDENT") return NextResponse.redirect(new URL("/", req.url));
   }
 
   if (pathname.startsWith("/servant")) {
-    if (!role) return NextResponse.redirect(new URL("/auth/staff", req.url));
-    if (role === "STUDENT") return NextResponse.redirect(new URL("/student", req.url));
-    if (role === "SUPER_ADMIN") return NextResponse.redirect(new URL("/super-admin", req.url));
+    if (!role) return NextResponse.redirect(new URL("/admin121210", req.url));
+    if (role === "STUDENT") return NextResponse.redirect(new URL("/student/dashboard", req.url));
+    if (role === "SUPER_ADMIN") return NextResponse.redirect(new URL("/super-admin/tenants", req.url));
+  }
+
+  if (pathname.startsWith("/admin")) {
+    if (role !== "CHURCH_ADMIN") return NextResponse.redirect(new URL(role ? "/" : "/admin121210", req.url));
+  }
+  if (pathname.startsWith("/super-admin")) {
+    if (role !== "SUPER_ADMIN") return NextResponse.redirect(new URL(role ? "/" : "/admin121210", req.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/student/:path*", "/servant/:path*"],
+  matcher: ["/student/:path*", "/servant/:path*", "/admin/:path*", "/super-admin/:path*"],
 };

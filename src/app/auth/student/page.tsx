@@ -10,7 +10,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { GRADES } from "@/lib/utils";
 
 export default function StudentAuthPage() {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register">("register");
   const [loading, setLoading] = useState(false);
   const [isMotherWorking, setIsMotherWorking] = useState(false);
   const { setAuth } = useAuth();

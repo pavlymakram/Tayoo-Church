@@ -20,7 +20,10 @@ export async function GET() {
     }),
     prisma.pointTransaction.findMany({
       where: { studentId: user.id, churchId: session.churchId },
-      include: { eventType: true },
+      include: {
+        eventType: true,
+        servant: { select: { fullName: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
@@ -35,6 +38,7 @@ export async function GET() {
       pointsAmount: t.pointsAmount,
       note: t.note,
       eventTitle: t.eventType.title,
+      servantName: t.servant.fullName,
       createdAt: t.createdAt,
       createdAtLabel: formatArabicDate(t.createdAt),
     })),

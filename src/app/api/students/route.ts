@@ -16,6 +16,8 @@ export async function GET(req: Request) {
   const grade = searchParams.get("grade")?.trim();
   const qr = searchParams.get("qr")?.trim();
   const id = searchParams.get("id")?.trim();
+  const page = Math.max(1, Number(searchParams.get("page") || 1));
+  const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") || 50)));
 
   const churchId = session.churchId!;
 
@@ -37,8 +39,7 @@ export async function GET(req: Request) {
     return jsonOk({ student: { ...sanitizeUser(student), totalPoints } });
   }
 
-  const students = await prisma.user.findMany({
-    where: {
+  const where = {
       churchId,
       role: "STUDENT",
       ...(grade ? { grade } : {}),
@@ -50,9 +51,13 @@ export async function GET(req: Request) {
             ],
           }
         : {}),
-    },
+    };
+  const [students, total] = await Promise.all([prisma.user.findMany({
+    where,
     orderBy: { fullName: "asc" },
-  });
+    skip: (page - 1) * limit,
+    take: limit,
+  }), prisma.user.count({ where })]);
 
   const ids = students.map((s) => s.id);
   const aggregates = await prisma.pointTransaction.groupBy({
@@ -63,6 +68,7 @@ export async function GET(req: Request) {
   const pointsMap = new Map(aggregates.map((a) => [a.studentId, a._sum.pointsAmount ?? 0]));
 
   return jsonOk({
+    pagination: { page, limit, total, hasMore: page * limit < total },
     students: students.map((s) => ({
       ...sanitizeUser(s),
       totalPoints: pointsMap.get(s.id) ?? 0,

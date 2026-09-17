@@ -133,3 +133,18 @@ export async function PATCH(req: Request) {
 
   return jsonOk({ church: updated });
 }
+
+/** Requires the tenant name as an intentional, non-replayable UI confirmation. */
+export async function DELETE(req: Request) {
+  const { session, error } = await requireSession(["SUPER_ADMIN"]);
+  if (error || !session) return error!;
+  const body = await readJson(req);
+  if (!body?.id || typeof body.confirmation !== "string") return jsonError("تأكيد الحذف مطلوب");
+  const church = await prisma.church.findUnique({ where: { id: body.id } });
+  if (!church) return jsonError("الكنيسة غير موجودة", 404);
+  if (body.confirmation.trim() !== church.name) return jsonError("اكتب اسم الكنيسة بالكامل لتأكيد الحذف", 400);
+  // Relations use onDelete: Cascade. Deleting the tenant removes users, event types,
+  // attendance/point records and all tenant-owned records in the same database action.
+  await prisma.church.delete({ where: { id: church.id } });
+  return jsonOk({ deleted: true, id: church.id });
+}
