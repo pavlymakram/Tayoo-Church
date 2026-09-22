@@ -1,4 +1,6 @@
-export function sanitizeUser(user: {
+import { normalizeRole } from "./utils";
+
+type SanitizableUser = {
   id: string;
   churchId: string | null;
   role: string;
@@ -14,11 +16,24 @@ export function sanitizeUser(user: {
   isMotherWorking: boolean;
   qrCodeId: string;
   createdAt: Date;
-}) {
+} & Partial<{
+  username: string | null;
+  /** Auto-generated initial password; cleared as soon as the owner changes it. */
+  initialPassword: string | null;
+  phaseId: string | null;
+  classId: string | null;
+  sector: string | null;
+  isFirstAdmin: boolean;
+  createdById: string | null;
+  email: string | null;
+}>;
+
+/** Strips every hash from a user record before it leaves the server. */
+export function sanitizeUser(user: SanitizableUser) {
   return {
     id: user.id,
     churchId: user.churchId,
-    role: user.role,
+    role: normalizeRole(user.role),
     fullName: user.fullName,
     phone: user.phone,
     secondaryPhone: user.secondaryPhone,
@@ -31,5 +46,16 @@ export function sanitizeUser(user: {
     isMotherWorking: user.isMotherWorking,
     qrCodeId: user.qrCodeId,
     createdAt: user.createdAt,
+    username: user.username ?? null,
+    initialPassword: user.initialPassword ?? null,
+    phaseId: user.phaseId ?? null,
+    classId: user.classId ?? null,
+    sector: user.sector ?? null,
+    isFirstAdmin: user.isFirstAdmin ?? false,
+    createdById: user.createdById ?? null,
+    email: user.email ?? null,
   };
 }
+
+export type SanitizedUser = ReturnType<typeof sanitizeUser>;
+

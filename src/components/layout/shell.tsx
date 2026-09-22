@@ -4,12 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Church,
+  ClipboardList,
   Home,
+  LayoutGrid,
   LogOut,
   ScanLine,
   Settings2,
+  UserCog,
+  UserRound,
   Users,
-  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -56,24 +59,22 @@ export function BrandMark({
 
 export function StaffBottomNav() {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
-  const isAdmin = user?.role === "CHURCH_ADMIN";
+  const { role, can, logout } = useAuth();
 
   const items = [
-    { href: "/servant", label: "الرئيسية", icon: Home },
-    { href: "/servant/scan", label: "مسح", icon: ScanLine },
-    { href: "/servant/students", label: "المستخدمين", icon: Users },
-    ...(isAdmin
-      ? [
-          { href: "/servant/events", label: "المناسبات", icon: CalendarDays },
-          { href: "/servant/settings", label: "إعدادات", icon: Settings2 },
-        ]
-      : []),
-  ];
+    { href: "/servant", label: "الرئيسية", icon: Home, show: true },
+    { href: "/servant/quick-scan", label: "مسح", icon: ScanLine, show: can("scanQr") },
+    { href: "/servant/students", label: "المخدومين", icon: Users, show: role !== "CHURCH_ADMIN" },
+    { href: "/servant/staff", label: "الخدام", icon: UserCog, show: can("managePhaseServants") },
+    { href: "/servant/classes", label: "الفصول", icon: LayoutGrid, show: can("createClasses") || can("manageClasses") },
+    { href: "/servant/attendance", label: "الحضور والتقارير", icon: ClipboardList, show: can("viewAttendanceLogs") },
+    { href: "/servant/settings", label: "إعدادات", icon: Settings2, show: role === "CHURCH_ADMIN" },
+    { href: "/servant/profile", label: "حسابي", icon: UserRound, show: true },
+  ].filter((item) => item.show);
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-200/80 bg-white/90 backdrop-blur-xl safe-bottom">
-      <div className="mx-auto flex max-w-lg items-stretch justify-around px-2 pt-2">
+      <div className="mx-auto flex max-w-2xl items-stretch justify-around overflow-x-auto px-2 pt-2">
         {items.map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
@@ -82,7 +83,7 @@ export function StaffBottomNav() {
               key={item.href + item.label}
               href={item.href}
               className={cn(
-                "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-bold transition",
+                "flex min-w-16 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-bold transition",
                 active ? "text-[var(--color-emerald)]" : "text-slate-500"
               )}
             >
@@ -94,7 +95,7 @@ export function StaffBottomNav() {
         <button
           type="button"
           onClick={() => logout()}
-          className="flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-bold text-slate-500"
+          className="flex min-w-16 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-bold text-slate-500"
         >
           <LogOut className="h-5 w-5" />
           خروج

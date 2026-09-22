@@ -6,7 +6,8 @@ import { eventTypeSchema } from "@/lib/validators";
 export async function GET() {
   const { session, error } = await requireSession([
     "STUDENT",
-    "SERVANT",
+    "PHASE_SERVANT",
+    "PHASE_ADMIN",
     "CHURCH_ADMIN",
     "SUPER_ADMIN",
   ]);

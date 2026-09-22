@@ -1,12 +1,15 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { can as canDo, type Capability } from "@/lib/permissions";
+import { normalizeRole, type Role } from "@/lib/utils";
 
 export type AppUser = {
   id: string;
   churchId: string | null;
-  role: "STUDENT" | "SERVANT" | "CHURCH_ADMIN" | "SUPER_ADMIN";
+  role: Role;
   fullName: string;
+  username?: string | null;
   phone: string;
   secondaryPhone?: string | null;
   address?: string | null;
@@ -18,18 +21,28 @@ export type AppUser = {
   isMotherWorking?: boolean;
   qrCodeId: string;
   createdAt?: string;
+  initialPassword?: string | null;
+  phaseId?: string | null;
+  phaseName?: string | null;
+  phaseAbbreviation?: string | null;
+  className?: string | null;
+  sector?: string | null;
+  isFirstAdmin?: boolean;
 };
 
 export type AppChurch = {
   id: string;
   name: string;
+  abbreviation?: string;
   licenseKey?: string;
 };
 
 type AuthState = {
   user: AppUser | null;
   church: AppChurch | null;
+  role: Role;
   loading: boolean;
+  can: (capability: Capability) => boolean;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   setAuth: (user: AppUser, church: AppChurch | null) => void;
@@ -77,9 +90,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setChurch(c);
   }, []);
 
+  const role = normalizeRole(user?.role);
+  const can = useCallback((capability: Capability) => canDo(role, capability), [role]);
+
   const value = useMemo(
-    () => ({ user, church, loading, refresh, logout, setAuth }),
-    [user, church, loading, refresh, logout, setAuth]
+    () => ({ user, church, role, loading, can, refresh, logout, setAuth }),
+    [user, church, role, loading, can, refresh, logout, setAuth]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -90,3 +106,4 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }
+

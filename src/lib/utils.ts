@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { DEFAULT_PHASES } from "./phases";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -25,23 +26,8 @@ export function formatArabicDate(date: Date | string) {
   }).format(d);
 }
 
-export const GRADES = [
-  "1 ابتدائي",
-  "2 ابتدائي",
-  "3 ابتدائي",
-  "4 ابتدائي",
-  "5 ابتدائي",
-  "6 ابتدائي",
-  "1 إعدادي",
-  "2 إعدادي",
-  "3 إعدادي",
-  "1 ثانوي",
-  "2 ثانوي",
-  "3 ثانوي",
-  "جامعي",
-  "خريج",
-  "أخرى",
-] as const;
+/** Stage labels follow the dynamic phase catalogue, with a free-text fallback. */
+export const GRADES = [...DEFAULT_PHASES.map((p) => p.name), "أخرى"] as const;
 
 export const DEFAULT_EVENT_TEMPLATES = [
   { title: "القداس الإلهي", defaultPoints: 5 },
@@ -49,12 +35,74 @@ export const DEFAULT_EVENT_TEMPLATES = [
   { title: "هدايا وتشجيع", defaultPoints: 0 },
 ] as const;
 
-export type Role = "STUDENT" | "SERVANT" | "CHURCH_ADMIN" | "SUPER_ADMIN";
+/**
+ * Five platform roles:
+ * SUPER_ADMIN → CHURCH_ADMIN → PHASE_ADMIN → PHASE_SERVANT → STUDENT (المخدوم).
+ */
+export type Role =
+  | "STUDENT"
+  | "PHASE_SERVANT"
+  | "PHASE_ADMIN"
+  | "CHURCH_ADMIN"
+  | "SUPER_ADMIN";
 
-export function isStaff(role: string) {
-  return role === "SERVANT" || role === "CHURCH_ADMIN" || role === "SUPER_ADMIN";
+export const STAFF_ROLES: readonly Role[] = [
+  "PHASE_SERVANT",
+  "PHASE_ADMIN",
+  "CHURCH_ADMIN",
+  "SUPER_ADMIN",
+] as const;
+
+export const ALL_ROLES: readonly Role[] = [
+  "STUDENT",
+  "PHASE_SERVANT",
+  "PHASE_ADMIN",
+  "CHURCH_ADMIN",
+  "SUPER_ADMIN",
+] as const;
+
+export const ROLE_LABELS: Record<Role, string> = {
+  STUDENT: "مخدوم",
+  PHASE_SERVANT: "خادم مرحلة",
+  PHASE_ADMIN: "أدمن قطاع",
+  CHURCH_ADMIN: "أدمن كنيسة",
+  SUPER_ADMIN: "مدير النظام",
+};
+
+/** Legacy databases stored servants as `SERVANT`; map them forward transparently. */
+export function normalizeRole(role: string | null | undefined): Role {
+  if (role === "SERVANT") return "PHASE_SERVANT";
+  if (
+    role === "STUDENT" ||
+    role === "PHASE_SERVANT" ||
+    role === "PHASE_ADMIN" ||
+    role === "CHURCH_ADMIN" ||
+    role === "SUPER_ADMIN"
+  ) {
+    return role;
+  }
+  return "STUDENT";
 }
 
-export function isChurchAdmin(role: string) {
-  return role === "CHURCH_ADMIN" || role === "SUPER_ADMIN";
+export function roleLabel(role: string | null | undefined): string {
+  return ROLE_LABELS[normalizeRole(role)];
 }
+
+export function isStaff(role: string | null | undefined) {
+  return STAFF_ROLES.includes(normalizeRole(role));
+}
+
+export function isChurchAdmin(role: string | null | undefined) {
+  const normalized = normalizeRole(role);
+  return normalized === "CHURCH_ADMIN" || normalized === "SUPER_ADMIN";
+}
+
+/** Home route for each role after authentication. */
+export const ROLE_HOME: Record<Role, string> = {
+  STUDENT: "/student/dashboard",
+  PHASE_SERVANT: "/servant/quick-scan",
+  PHASE_ADMIN: "/servant",
+  CHURCH_ADMIN: "/admin/dashboard",
+  SUPER_ADMIN: "/super-admin/tenants",
+};
+

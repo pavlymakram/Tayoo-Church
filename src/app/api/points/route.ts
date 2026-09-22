@@ -6,9 +6,17 @@ import {
   updatePointTransactionSchema,
 } from "@/lib/validators";
 import { formatArabicDate } from "@/lib/utils";
+import { resolveScope } from "@/lib/scope";
+import type { SessionPayload } from "@/lib/auth";
+
+/** Every point mutation is confined to the caller's stage/sector scope. */
+async function scopeFilterFor(session: SessionPayload) {
+  const scope = await resolveScope(session);
+  return scope.churchWide ? {} : { phaseId: { in: scope.phaseIds } };
+}
 
 export async function GET(req: Request) {
-  const { session, error } = await requireSession(["SERVANT", "CHURCH_ADMIN"]);
+  const { session, error } = await requireSession(["SUPER_ADMIN", "CHURCH_ADMIN", "PHASE_ADMIN", "PHASE_SERVANT"]);
   if (error || !session) return error!;
   if (!session.churchId) return jsonError("لا توجد كنيسة مرتبطة", 400);
 
@@ -17,15 +25,20 @@ export async function GET(req: Request) {
   const limit = Math.min(Number(searchParams.get("limit") || 100), 500);
   const offset = Math.max(0, Number(searchParams.get("offset") || 0));
 
+  // Point records stay inside the caller's stage/sector scope.
+  const scope = await resolveScope(session);
+  const scopeFilter = scope.churchWide ? {} : { phaseId: { in: scope.phaseIds } };
+
   if (studentId) {
     const student = await prisma.user.findFirst({
-      where: { id: studentId, churchId: session.churchId, role: "STUDENT" },
+      where: { id: studentId, churchId: session.churchId, role: "STUDENT", ...scopeFilter },
     });
     if (!student) return jsonError("المخدوم غير موجود", 404);
   }
 
   const where = {
       churchId: session.churchId,
+      student: { ...scopeFilter },
       ...(studentId ? { studentId } : {}),
     };
   const [transactions, total] = await Promise.all([prisma.pointTransaction.findMany({
@@ -70,7 +83,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { session, error } = await requireSession(["SERVANT", "CHURCH_ADMIN"]);
+  const { session, error } = await requireSession(["SUPER_ADMIN", "CHURCH_ADMIN", "PHASE_ADMIN", "PHASE_SERVANT"]);
   if (error || !session) return error!;
   if (!session.churchId) return jsonError("لا توجد كنيسة مرتبطة", 400);
 
@@ -80,10 +93,11 @@ export async function POST(req: Request) {
   if (parsed.error) return parsed.error;
   const data = parsed.data;
 
+  const scopeFilter = await scopeFilterFor(session);
   const student = await prisma.user.findFirst({
-    where: { id: data.studentId, churchId: session.churchId, role: "STUDENT" },
+    where: { id: data.studentId, churchId: session.churchId, role: "STUDENT", ...scopeFilter },
   });
-  if (!student) return jsonError("المخدوم غير موجود في كنيستك", 404);
+  if (!student) return jsonError("المخدوم غير موجود في نطاق خدمتك", 404);
 
   const eventType = await prisma.eventType.findFirst({
     where: { id: data.eventTypeId, churchId: session.churchId, isActive: true },
@@ -125,7 +139,7 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const { session, error } = await requireSession(["SERVANT", "CHURCH_ADMIN"]);
+  const { session, error } = await requireSession(["SUPER_ADMIN", "CHURCH_ADMIN", "PHASE_ADMIN", "PHASE_SERVANT"]);
   if (error || !session) return error!;
   if (!session.churchId) return jsonError("لا توجد كنيسة مرتبطة", 400);
 
@@ -135,10 +149,11 @@ export async function PATCH(req: Request) {
   if (parsed.error) return parsed.error;
   const data = parsed.data;
 
+  const scopeFilter = await scopeFilterFor(session);
   const existing = await prisma.pointTransaction.findFirst({
-    where: { id: data.id, churchId: session.churchId },
+    where: { id: data.id, churchId: session.churchId, student: { ...scopeFilter } },
   });
-  if (!existing) return jsonError("الحركة غير موجودة", 404);
+  if (!existing) return jsonError("الحركة غير موجودة داخل نطاق خدمتك", 404);
 
   if (typeof data.pointsAmount === "number" && data.pointsAmount === 0) {
     return jsonError("قيمة النقط لا يمكن أن تكون صفر — احذف الحركة بدلاً من ذلك");
@@ -187,7 +202,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const { session, error } = await requireSession(["SERVANT", "CHURCH_ADMIN"]);
+  const { session, error } = await requireSession(["SUPER_ADMIN", "CHURCH_ADMIN", "PHASE_ADMIN", "PHASE_SERVANT"]);
   if (error || !session) return error!;
   if (!session.churchId) return jsonError("لا توجد كنيسة مرتبطة", 400);
 
@@ -195,9 +210,9 @@ export async function DELETE(req: Request) {
   if (!id) return jsonError("معرف الحركة مطلوب");
 
   const existing = await prisma.pointTransaction.findFirst({
-    where: { id, churchId: session.churchId },
+    where: { id, churchId: session.churchId, student: { ...(await scopeFilterFor(session)) } },
   });
-  if (!existing) return jsonError("الحركة غير موجودة", 404);
+  if (!existing) return jsonError("الحركة غير موجودة داخل نطاق خدمتك", 404);
 
   await prisma.pointTransaction.delete({ where: { id: existing.id } });
 

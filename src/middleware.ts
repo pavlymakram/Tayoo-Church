@@ -11,19 +11,25 @@ async function getRole(req: NextRequest) {
       token,
       new TextEncoder().encode(process.env.JWT_SECRET)
     );
-    return String(payload.role || "");
+    const role = String(payload.role || "");
+    // Databases created before the RBAC migration stored servants as `SERVANT`.
+    return role === "SERVANT" ? "PHASE_SERVANT" : role;
   } catch {
     return null;
   }
 }
 
+/**
+ * Route guards for the five roles:
+ * SUPER_ADMIN → /super-admin · CHURCH_ADMIN → /admin ·
+ * PHASE_ADMIN | PHASE_SERVANT → /servant · STUDENT → /student.
+ */
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const role = await getRole(req);
 
   if (pathname.startsWith("/student")) {
-    if (!role) return NextResponse.redirect(new URL("/", req.url));
-    if (role !== "STUDENT") return NextResponse.redirect(new URL("/", req.url));
+    if (role !== "STUDENT") return NextResponse.redirect(new URL(role ? "/" : "/auth/login", req.url));
   }
 
   if (pathname.startsWith("/servant")) {

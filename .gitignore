@@ -1,4 +1,4 @@
-# dependencies
+﻿# dependencies
 /node_modules
 /.pnp
 .pnp.*
@@ -31,7 +31,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# env — never commit deployment credentials
+# env â€” never commit deployment credentials
 .env*
 !.env.example
 
@@ -48,3 +48,5 @@ next-env.d.ts
 # IDE
 .idea
 .vscode
+
+tmp-server*.log

@@ -1,4 +1,20 @@
 import { z } from "zod";
+import { ABBREVIATION_PATTERN, normalizeAbbreviation } from "./credentials";
+import { SECTORS } from "./phases";
+
+const SECTOR_KEYS = SECTORS.map((s) => s.key) as [string, ...string[]];
+
+/** English abbreviation codes: `mar_girgis`, `prep1`, `sec2` … */
+export const abbreviationField = (label: string) =>
+  z
+    .string()
+    .min(2, `${label} مطلوب`)
+    .max(30, `${label} طويل جداً`)
+    .transform(normalizeAbbreviation)
+    .refine((value) => ABBREVIATION_PATTERN.test(value), {
+      message: `${label} يجب أن يكون بحروف إنجليزية صغيرة وأرقام وشرطة سفلية فقط`,
+    });
+
 
 export const studentRegisterSchema = z.object({
   churchLicenseKey: z.string().min(4, "مفتاح الترخيص مطلوب"),
@@ -24,16 +40,30 @@ export const studentLoginSchema = z.object({
   message: "أدخل رقم التليفون أو الاسم",
 });
 
-export const staffLoginSchema = z.object({
-  phone: z.string().min(8, "رقم التليفون مطلوب"),
-  password: z.string().min(4, "كلمة المرور مطلوبة"),
-});
+/** Staff sign in with the auto-generated username (or phone) + password. */
+export const staffLoginSchema = z
+  .object({
+    identifier: z.string().min(3).optional(),
+    phone: z.string().min(8).optional(),
+    password: z.string().min(4, "كلمة المرور مطلوبة"),
+  })
+  .refine((d) => d.identifier || d.phone, {
+    message: "أدخل اسم المستخدم أو رقم التليفون",
+  });
 
 export const createChurchSchema = z.object({
   name: z.string().min(2, "اسم الكنيسة مطلوب"),
-  adminFullName: z.string().min(3, "اسم الأدمن مطلوب"),
+  abbreviation: abbreviationField("كود الكنيسة بالإنجليزية"),
+  adminFullName: z.string().min(3, "اسم أدمن الكنيسة مطلوب"),
   adminPhone: z.string().min(8, "رقم تليفون الأدمن مطلوب"),
-  adminPassword: z.string().min(6, "كلمة المرور يجب ألا تقل عن 6 أحرف"),
+});
+
+export const updateChurchSchema = z.object({
+  id: z.string().min(1, "معرف الكنيسة مطلوب"),
+  name: z.string().min(2).optional(),
+  abbreviation: abbreviationField("كود الكنيسة بالإنجليزية").optional(),
+  isActive: z.boolean().optional(),
+  regenerateLicense: z.boolean().optional(),
 });
 
 /** The universal login accepts student PIN/birth date or a staff password/security code. */
@@ -61,28 +91,40 @@ export const pointTransactionSchema = z.object({
   note: z.string().optional().nullable(),
 });
 
-export const createServantSchema = z.object({
-  fullName: z.string().min(3),
-  phone: z.string().min(8),
-  email: z.string().email().optional().or(z.literal("")),
-  password: z.string().min(6),
-  securityCode: z.string().min(4).max(64).optional().or(z.literal("")),
-  role: z.enum(["SERVANT", "CHURCH_ADMIN"]).default("SERVANT"),
+/** Church admins, phase admins and phase servants share one credential pipeline. */
+export const staffUpsertSchema = z.object({
+  id: z.string().optional(),
+  role: z.enum(["CHURCH_ADMIN", "PHASE_ADMIN", "PHASE_SERVANT"]),
+  fullName: z.string().min(3, "الاسم مطلوب"),
+  phone: z.string().min(8, "رقم التليفون مطلوب"),
+  email: z.string().email("البريد الإلكتروني غير صحيح").optional().nullable().or(z.literal("")),
+  secondaryPhone: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  /** Required for PHASE_ADMIN — the sector (قطاع) they manage. */
+  sector: z.enum(SECTOR_KEYS).optional().nullable(),
+  /** Required for PHASE_SERVANT — the single stage they serve. */
+  phaseId: z.string().optional().nullable(),
+  /** Optional class/fasl assignment for servants. */
+  classId: z.string().optional().nullable(),
+  /** Re-issues the auto-generated initial password on update. */
+  regenerateCredentials: z.boolean().optional().default(false),
 });
 
-export const adminUserUpsertSchema = z.object({
+export const studentUpsertSchema = z.object({
   id: z.string().optional(),
-  role: z.enum(["STUDENT", "SERVANT", "CHURCH_ADMIN"]),
   fullName: z.string().min(3, "الاسم مطلوب"),
   phone: z.string().min(8, "رقم التليفون مطلوب"),
   secondaryPhone: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
   grade: z.string().optional().nullable(),
+  phaseId: z.string().optional().nullable(),
+  classId: z.string().optional().nullable(),
   birthDate: z.string().optional().nullable(),
   confessionFather: z.string().optional().nullable(),
   fatherJob: z.string().optional().nullable(),
   motherJob: z.string().optional().nullable(),
   isMotherWorking: z.boolean().optional().default(false),
+  /** Optional PIN kept for legacy PIN login; username/password always exist. */
   pin: z
     .string()
     .optional()
@@ -91,14 +133,33 @@ export const adminUserUpsertSchema = z.object({
     .refine((v) => v === null || (v.length >= 4 && v.length <= 8), {
       message: "الرقم السري يجب أن يكون من 4 إلى 8 أرقام",
     }),
-  password: z
-    .string()
-    .optional()
-    .nullable()
-    .transform((v) => (v && v.trim() ? v.trim() : null))
-    .refine((v) => v === null || v.length >= 6, {
-      message: "كلمة المرور يجب ألا تقل عن 6 أحرف",
-    }),
+  regenerateCredentials: z.boolean().optional().default(false),
+});
+
+export const phaseUpsertSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1, "اسم المرحلة مطلوب"),
+  abbreviation: abbreviationField("كود المرحلة بالإنجليزية"),
+  sector: z.enum(SECTOR_KEYS),
+  isActive: z.boolean().optional().default(true),
+  sortOrder: z.number().int().min(0).max(999).optional(),
+});
+
+export const classUpsertSchema = z.object({
+  id: z.string().optional(),
+  phaseId: z.string().min(1, "اختر المرحلة"),
+  name: z.string().min(1, "اسم الفصل مطلوب"),
+});
+
+/** Profile settings: owners rotate their own password (or PIN for students). */
+export const changeSecretSchema = z.object({
+  currentSecret: z.string().min(4, "أدخل كلمة المرور الحالية"),
+  newSecret: z.string().min(8, "كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف").max(72),
+});
+
+export const changePinSchema = z.object({
+  currentPin: z.string().min(4, "أدخل الرقم السري الحالي"),
+  newPin: z.string().min(4, "الرقم السري الجديد من 4 إلى 8 أرقام").max(8),
 });
 
 export const updatePointTransactionSchema = z.object({

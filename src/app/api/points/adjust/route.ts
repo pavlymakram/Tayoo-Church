@@ -2,6 +2,13 @@ import { prisma } from "@/lib/prisma";
 import { jsonError, jsonOk, parseBody, readJson } from "@/lib/api";
 import { requireSession } from "@/lib/auth";
 import { adjustBalanceSchema } from "@/lib/validators";
+import { resolveScope } from "@/lib/scope";
+
+async function scopeFilterFor(session: Awaited<ReturnType<typeof requireSession>>["session"]) {
+  if (!session) return {};
+  const scope = await resolveScope(session);
+  return scope.churchWide ? {} : { phaseId: { in: scope.phaseIds } };
+}
 
 async function getOrCreateAdjustEvent(churchId: string) {
   const title = "تعديل رصيد يدوي";
@@ -22,7 +29,7 @@ async function getOrCreateAdjustEvent(churchId: string) {
 }
 
 export async function POST(req: Request) {
-  const { session, error } = await requireSession(["SERVANT", "CHURCH_ADMIN"]);
+  const { session, error } = await requireSession(["SUPER_ADMIN", "CHURCH_ADMIN", "PHASE_ADMIN", "PHASE_SERVANT"]);
   if (error || !session) return error!;
   if (!session.churchId) return jsonError("لا توجد كنيسة مرتبطة", 400);
 
@@ -37,9 +44,10 @@ export async function POST(req: Request) {
       id: data.studentId,
       churchId: session.churchId,
       role: "STUDENT",
+      ...(await scopeFilterFor(session)),
     },
   });
-  if (!student) return jsonError("المخدوم غير موجود", 404);
+  if (!student) return jsonError("المخدوم غير موجود في نطاق خدمتك", 404);
 
   const current =
     (

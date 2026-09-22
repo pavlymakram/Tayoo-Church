@@ -26,7 +26,7 @@ type EventType = {
 };
 
 export default function ScanPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, can } = useAuth();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Student[]>([]);
@@ -39,8 +39,12 @@ export default function ScanPage() {
 
   useEffect(() => {
     if (loading) return;
-    if (!user || user.role === "STUDENT") {
-      router.replace("/auth/staff");
+    if (!user) {
+      router.replace("/admin121210");
+      return;
+    }
+    if (!can("scanQr")) {
+      router.replace("/servant");
       return;
     }
     void (async () => {
@@ -54,7 +58,7 @@ export default function ScanPage() {
         setPoints(active[0].defaultPoints || 5);
       }
     })();
-  }, [user, loading, router]);
+  }, [user, loading, router, can]);
 
   useEffect(() => {
     if (!selected) return;

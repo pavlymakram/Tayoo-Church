@@ -1,9 +1,9 @@
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { jsonError, jsonOk, parseBody, readJson } from "@/lib/api";
-import { hashPassword, requireSession } from "@/lib/auth";
-import { createChurchSchema } from "@/lib/validators";
-import { DEFAULT_EVENT_TEMPLATES } from "@/lib/utils";
+import { requireSession } from "@/lib/auth";
+import { createChurchSchema, updateChurchSchema } from "@/lib/validators";
+import { createStaffAccount, provisionDefaultEventTypes, provisionDefaultPhases } from "@/lib/provision";
 
 function generateLicenseKey() {
   return `TAYOO-${randomBytes(4).toString("hex").toUpperCase()}-${randomBytes(4).toString("hex").toUpperCase()}`;
@@ -19,6 +19,8 @@ export async function GET() {
       _count: {
         select: {
           users: true,
+          phases: true,
+          classes: true,
           eventTypes: true,
           pointTransactions: true,
         },
@@ -31,7 +33,7 @@ export async function GET() {
     activeChurches: churches.filter((c) => c.isActive).length,
     students: await prisma.user.count({ where: { role: "STUDENT" } }),
     servants: await prisma.user.count({
-      where: { role: { in: ["SERVANT", "CHURCH_ADMIN"] } },
+      where: { role: { in: ["PHASE_SERVANT", "PHASE_ADMIN", "CHURCH_ADMIN"] } },
     }),
   };
 
@@ -40,16 +42,24 @@ export async function GET() {
     churches: churches.map((c) => ({
       id: c.id,
       name: c.name,
+      abbreviation: c.abbreviation,
       licenseKey: c.licenseKey,
       isActive: c.isActive,
       createdAt: c.createdAt,
       userCount: c._count.users,
+      phaseCount: c._count.phases,
+      classCount: c._count.classes,
       eventCount: c._count.eventTypes,
       transactionCount: c._count.pointTransactions,
     })),
   });
 }
 
+/**
+ * Creates a tenant: the church record with its dynamic English abbreviation, the
+ * default stage catalogue, default event types, and the FIRST church admin whose
+ * credentials are auto-generated (`{church}_admin_{5 digits}`).
+ */
 export async function POST(req: Request) {
   const { session, error } = await requireSession(["SUPER_ADMIN"]);
   if (error || !session) return error!;
@@ -60,50 +70,58 @@ export async function POST(req: Request) {
   if (parsed.error) return parsed.error;
   const data = parsed.data;
 
+  const abbreviationTaken = await prisma.church.findUnique({
+    where: { abbreviation: data.abbreviation },
+    select: { id: true },
+  });
+  if (abbreviationTaken) return jsonError("كود الكنيسة بالإنجليزية مستخدم بالفعل", 409);
+
   const existingPhone = await prisma.user.findFirst({
     where: { phone: data.adminPhone.trim() },
+    select: { id: true },
   });
   if (existingPhone) return jsonError("رقم تليفون الأدمن مستخدم بالفعل", 409);
 
-  const church = await prisma.church.create({
-    data: {
-      name: data.name.trim(),
-      licenseKey: generateLicenseKey(),
-    },
-  });
-
-  for (const ev of DEFAULT_EVENT_TEMPLATES) {
-    await prisma.eventType.create({
+  const result = await prisma.$transaction(async (tx) => {
+    const church = await tx.church.create({
       data: {
-        churchId: church.id,
-        title: ev.title,
-        defaultPoints: ev.defaultPoints,
+        name: data.name.trim(),
+        abbreviation: data.abbreviation,
+        licenseKey: generateLicenseKey(),
       },
     });
-  }
+    await provisionDefaultPhases(tx, church.id);
+    await provisionDefaultEventTypes(tx, church.id);
 
-  const admin = await prisma.user.create({
-    data: {
+    const admin = await createStaffAccount(tx, {
       churchId: church.id,
+      churchAbbreviation: church.abbreviation,
       role: "CHURCH_ADMIN",
-      fullName: data.adminFullName.trim(),
-      phone: data.adminPhone.trim(),
-      passwordHash: await hashPassword(data.adminPassword),
-    },
+      fullName: data.adminFullName,
+      phone: data.adminPhone,
+      // The very first church admin owns the church-admin deletion privilege.
+      isFirstAdmin: true,
+      createdById: session.userId,
+    });
+
+    return { church, admin };
   });
 
   return jsonOk(
     {
       church: {
-        id: church.id,
-        name: church.name,
-        licenseKey: church.licenseKey,
-        isActive: church.isActive,
+        id: result.church.id,
+        name: result.church.name,
+        abbreviation: result.church.abbreviation,
+        licenseKey: result.church.licenseKey,
+        isActive: result.church.isActive,
       },
       admin: {
-        id: admin.id,
-        fullName: admin.fullName,
-        phone: admin.phone,
+        id: result.admin.user.id,
+        fullName: result.admin.user.fullName,
+        phone: result.admin.user.phone,
+        username: result.admin.user.username,
+        initialPassword: result.admin.initialPassword,
       },
     },
     201
@@ -115,19 +133,29 @@ export async function PATCH(req: Request) {
   if (error || !session) return error!;
 
   const body = await readJson(req);
-  if (!body?.id) return jsonError("معرف الكنيسة مطلوب");
+  if (!body) return jsonError("طلب غير صالح");
+  const parsed = parseBody(updateChurchSchema, body);
+  if (parsed.error) return parsed.error;
+  const data = parsed.data;
 
-  const church = await prisma.church.findUnique({ where: { id: body.id } });
+  const church = await prisma.church.findUnique({ where: { id: data.id } });
   if (!church) return jsonError("الكنيسة غير موجودة", 404);
+
+  if (data.abbreviation && data.abbreviation !== church.abbreviation) {
+    const taken = await prisma.church.findUnique({
+      where: { abbreviation: data.abbreviation },
+      select: { id: true },
+    });
+    if (taken) return jsonError("كود الكنيسة بالإنجليزية مستخدم بالفعل", 409);
+  }
 
   const updated = await prisma.church.update({
     where: { id: church.id },
     data: {
-      ...(typeof body.name === "string" ? { name: body.name.trim() } : {}),
-      ...(typeof body.isActive === "boolean" ? { isActive: body.isActive } : {}),
-      ...(body.regenerateLicense === true
-        ? { licenseKey: generateLicenseKey() }
-        : {}),
+      ...(data.name ? { name: data.name.trim() } : {}),
+      ...(data.abbreviation ? { abbreviation: data.abbreviation } : {}),
+      ...(typeof data.isActive === "boolean" ? { isActive: data.isActive } : {}),
+      ...(data.regenerateLicense === true ? { licenseKey: generateLicenseKey() } : {}),
     },
   });
 

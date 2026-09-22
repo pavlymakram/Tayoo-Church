@@ -5,16 +5,19 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BrandMark, PageShell } from "@/components/layout/shell";
 import { Button, Input } from "@/components/ui/form";
+import { Modal } from "@/components/ui/modal";
 import { useAuth } from "@/components/providers/auth-provider";
-import { AccessCodeManager } from "@/components/admin/access-code-manager";
 
 type ChurchRow = {
   id: string;
   name: string;
+  abbreviation: string;
   licenseKey: string;
   isActive: boolean;
   createdAt: string;
   userCount: number;
+  phaseCount: number;
+  classCount: number;
   eventCount: number;
   transactionCount: number;
 };
@@ -26,6 +29,15 @@ type Totals = {
   servants: number;
 };
 
+type IssuedAdmin = {
+  churchName: string;
+  abbreviation: string;
+  licenseKey: string;
+  fullName: string;
+  username: string;
+  initialPassword: string;
+};
+
 export default function SuperAdminPage() {
   const { user, loading, setAuth, logout } = useAuth();
   const router = useRouter();
@@ -33,6 +45,7 @@ export default function SuperAdminPage() {
   const [churches, setChurches] = useState<ChurchRow[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [busy, setBusy] = useState(false);
+  const [issued, setIssued] = useState<IssuedAdmin | null>(null);
 
   async function load() {
     const res = await fetch("/api/super-admin/churches");
@@ -69,7 +82,7 @@ export default function SuperAdminPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          phone: String(fd.get("phone") || ""),
+          identifier: String(fd.get("identifier") || ""),
           password: String(fd.get("password") || ""),
         }),
       });
@@ -96,14 +109,22 @@ export default function SuperAdminPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: String(fd.get("name") || ""),
+          abbreviation: String(fd.get("abbreviation") || ""),
           adminFullName: String(fd.get("adminFullName") || ""),
           adminPhone: String(fd.get("adminPhone") || ""),
-          adminPassword: String(fd.get("adminPassword") || ""),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "فشل الإنشاء");
-      toast.success(`تم إنشاء ${data.church.name}`);
+      setIssued({
+        churchName: data.church.name,
+        abbreviation: data.church.abbreviation,
+        licenseKey: data.church.licenseKey,
+        fullName: data.admin.fullName,
+        username: data.admin.username,
+        initialPassword: data.admin.initialPassword,
+      });
+      toast.success(`تم إنشاء ${data.church.name} مع الأدمن الأساسي`);
       e.currentTarget.reset();
       await load();
     } catch (err) {
@@ -113,39 +134,63 @@ export default function SuperAdminPage() {
     }
   }
 
-  async function toggleChurch(c: ChurchRow) {
+  async function toggleChurch(church: ChurchRow) {
     const res = await fetch("/api/super-admin/churches", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: c.id, isActive: !c.isActive }),
+      body: JSON.stringify({ id: church.id, isActive: !church.isActive }),
     });
-    if (!res.ok) toast.error("تعذر التحديث");
-    else {
-      toast.success(c.isActive ? "تم إيقاف الترخيص" : "تم تفعيل الترخيص");
-      await load();
+    if (!res.ok) {
+      toast.error("تعذر التحديث");
+      return;
     }
-  }
-
-  async function deleteChurch(c: ChurchRow) {
-    const confirmation = window.prompt(`حذف نهائي: اكتب اسم الكنيسة كما هو لتأكيد حذف كل بياناتها:\n${c.name}`);
-    if (confirmation === null) return;
-    const res = await fetch("/api/super-admin/churches", {
-      method: "DELETE", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: c.id, confirmation }),
-    });
-    const data = await res.json();
-    if (!res.ok) { toast.error(data.error || "تعذر حذف الكنيسة"); return; }
-    toast.success("تم حذف الكنيسة وكل بياناتها نهائياً");
+    toast.success(church.isActive ? "تم إيقاف الكنيسة" : "تم تفعيل الكنيسة");
     await load();
   }
 
-  if (needLogin || (!user && !loading)) {
+  async function updateAbbreviation(church: ChurchRow) {
+    const value = window.prompt(
+      "كود الكنيسة بالإنجليزية (حروف صغيرة وأرقام وشرطة سفلية، يُستخدم في توليد أسماء المستخدمين)",
+      church.abbreviation
+    );
+    if (!value || value.trim() === church.abbreviation) return;
+    const res = await fetch("/api/super-admin/churches", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: church.id, abbreviation: value.trim() }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      toast.error(data.error || "تعذر التعديل");
+      return;
+    }
+    toast.success("تم تحديث كود الكنيسة");
+    await load();
+  }
+
+  async function deleteChurch(church: ChurchRow) {
+    const confirmation = window.prompt(`اكتب اسم الكنيسة بالكامل للتأكيد: ${church.name}`);
+    if (confirmation === null) return;
+    const res = await fetch("/api/super-admin/churches", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: church.id, confirmation }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      toast.error(data.error || "تعذر الحذف");
+      return;
+    }
+    toast.success("تم حذف الكنيسة");
+    await load();
+  }
+if (needLogin || (!user && !loading)) {
     return (
       <PageShell>
         <BrandMark />
         <form onSubmit={onLogin} className="glass mx-auto mt-8 max-w-md space-y-4 rounded-3xl p-6">
           <h1 className="text-2xl font-black text-[var(--color-navy)]">بوابة المدير العام</h1>
-          <Input name="phone" label="رقم التليفون" required />
+          <Input name="identifier" label="اسم المستخدم أو رقم التليفون" required placeholder="01211931285" />
           <Input name="password" label="كلمة المرور" type="password" required />
           <Button type="submit" className="w-full" disabled={busy}>
             دخول سري
@@ -174,45 +219,86 @@ export default function SuperAdminPage() {
       </div>
 
       <form onSubmit={onCreateChurch} className="glass mb-8 grid gap-3 rounded-3xl p-5 md:grid-cols-2">
-        <h2 className="md:col-span-2 font-black text-[var(--color-navy)]">إنشاء كنيسة + ترخيص</h2>
+        <h2 className="md:col-span-2 font-black text-[var(--color-navy)]">إنشاء كنيسة + ترخيص + أدمن أساسي</h2>
         <Input name="name" label="اسم الكنيسة" required placeholder="كنيسة..." />
-        <Input name="adminFullName" label="اسم أدمن الكنيسة" required />
-        <Input name="adminPhone" label="تليفون الأدمن" required />
-        <Input name="adminPassword" label="كلمة مرور الأدمن" type="password" required minLength={6} />
+        <Input
+          name="abbreviation"
+          label="كود الكنيسة بالإنجليزية (Abbreviation)"
+          required
+          placeholder="mar_girgis"
+          pattern="[a-zA-Z0-9_\- ]{2,30}"
+          title="حروف إنجليزية وأرقام وشرطة سفلية"
+        />
+        <Input name="adminFullName" label="اسم أدمن الكنيسة (الأدمن الأساسي)" required />
+        <Input name="adminPhone" label="تليفون الأدمن" required inputMode="tel" />
+        <p className="md:col-span-2 rounded-2xl bg-white p-3 text-xs leading-relaxed text-slate-600">
+          يتم توليد اسم المستخدم وكلمة المرور تلقائياً للأدمن الأساسي بالصيغة{" "}
+          <span className="font-mono">{"{church}_admin_{5 أرقام}"}</span> — مثال:{" "}
+          <span className="font-mono">mar_girgis_admin_48291</span>. كما تُنشأ جميع المراحل الافتراضية (KG1 → خريج) مع كود
+          إنجليزي لكل مرحلة.
+        </p>
         <div className="md:col-span-2">
           <Button type="submit" disabled={busy} className="w-full sm:w-auto">
-            إنشاء وتفعيل الترخيص
+            {busy ? "جارٍ الإنشاء..." : "إنشاء وتفعيل الترخيص"}
           </Button>
         </div>
       </form>
-
-      <AccessCodeManager superAdmin churches={churches.map((c) => ({ id: c.id, name: c.name }))} />
 
       <div className="space-y-3">
         {churches.map((c) => (
           <div key={c.id} className="glass rounded-3xl p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <p className="text-lg font-black text-[var(--color-navy)]">{c.name}</p>
+                <p className="mt-1 font-mono text-sm font-bold text-[var(--color-navy)]">
+                  كود الكنيسة: {c.abbreviation}
+                </p>
                 <p className="mt-1 font-mono text-xs text-[var(--color-gold)]">{c.licenseKey}</p>
                 <p className="mt-2 text-xs text-slate-500">
-                  {c.userCount} مستخدم · {c.eventCount} مناسبة · {c.transactionCount} معاملة
+                  {c.userCount} مستخدم · {c.phaseCount} مرحلة · {c.classCount} فصل · {c.eventCount} مناسبة ·{" "}
+                  {c.transactionCount} معاملة
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant={c.isActive ? "danger" : "primary"}
-                onClick={() => void toggleChurch(c)}
-              >
-                {c.isActive ? "إيقاف" : "تفعيل"}
-              </Button>
-              <Button size="sm" variant="danger" onClick={() => void deleteChurch(c)}>
-                حذف الكنيسة نهائياً
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="secondary" onClick={() => void updateAbbreviation(c)}>
+                  تعديل الكود
+                </Button>
+                <Button size="sm" variant={c.isActive ? "danger" : "primary"} onClick={() => void toggleChurch(c)}>
+                  {c.isActive ? "إيقاف" : "تفعيل"}
+                </Button>
+                <Button size="sm" variant="danger" onClick={() => void deleteChurch(c)}>
+                  حذف الكنيسة نهائياً
+                </Button>
+              </div>
             </div>
           </div>
         ))}
       </div>
+
+      <Modal open={!!issued} onClose={() => setIssued(null)} title="بيانات الأدمن الأساسي">
+        {issued && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-700">
+              تم إنشاء كنيسة <strong>{issued.churchName}</strong> بكود{" "}
+              <span className="font-mono font-bold">{issued.abbreviation}</span>. سلّم بيانات الدخول التالية للأدمن الأساسي —
+              وهو الوحيد الذي يمكنه حذف أدمنة الكنيسة الآخرين.
+            </p>
+            <div className="rounded-2xl bg-white p-4">
+              <p className="text-xs text-slate-500">الاسم</p>
+              <p className="font-bold text-[var(--color-navy)]">{issued.fullName}</p>
+              <p className="mt-3 text-xs text-slate-500">اسم المستخدم</p>
+              <p className="font-mono text-lg font-black text-[var(--color-navy)]">{issued.username}</p>
+              <p className="mt-3 text-xs text-slate-500">كلمة المرور الأولية</p>
+              <p className="font-mono text-lg font-black text-[var(--color-gold)]">{issued.initialPassword}</p>
+              <p className="mt-3 text-xs text-slate-500">مفتاح ترخيص الكنيسة (للمخدومين)</p>
+              <p className="font-mono text-xs font-bold text-slate-700">{issued.licenseKey}</p>
+            </div>
+            <Button type="button" className="w-full" onClick={() => setIssued(null)}>
+              تم — إغلاق
+            </Button>
+          </div>
+        )}
+      </Modal>
     </PageShell>
   );
 }

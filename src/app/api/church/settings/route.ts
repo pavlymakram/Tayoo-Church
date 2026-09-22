@@ -4,15 +4,28 @@ import { requireSession } from "@/lib/auth";
 import { churchSettingsSchema } from "@/lib/validators";
 
 export async function GET() {
-  const { session, error } = await requireSession(["SERVANT", "CHURCH_ADMIN"]);
+  const { session, error } = await requireSession([
+    "SUPER_ADMIN",
+    "CHURCH_ADMIN",
+    "PHASE_ADMIN",
+    "PHASE_SERVANT",
+  ]);
   if (error || !session) return error!;
   if (!session.churchId) return jsonError("لا توجد كنيسة مرتبطة", 400);
-  const church = await prisma.church.findUnique({ where: { id: session.churchId }, select: { defaultMassPoints: true, defaultServicePoints: true } });
+  const church = await prisma.church.findUnique({
+    where: { id: session.churchId },
+    select: {
+      name: true,
+      abbreviation: true,
+      defaultMassPoints: true,
+      defaultServicePoints: true,
+    },
+  });
   return jsonOk({ settings: church });
 }
 
 export async function PATCH(req: Request) {
-  const { session, error } = await requireSession(["CHURCH_ADMIN"]);
+  const { session, error } = await requireSession(["SUPER_ADMIN", "CHURCH_ADMIN"]);
   if (error || !session) return error!;
   if (!session.churchId) return jsonError("لا توجد كنيسة مرتبطة", 400);
   const body = await readJson(req);

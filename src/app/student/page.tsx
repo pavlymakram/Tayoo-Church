@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { LogOut, QrCode, Sparkles } from "lucide-react";
+import { LogOut, KeyRound, QrCode, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/layout/shell";
-import { Button } from "@/components/ui/form";
+import { Button, Input } from "@/components/ui/form";
 import { Modal } from "@/components/ui/modal";
 import { StudentIdCard } from "@/components/student/id-card";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -16,8 +16,20 @@ type Tx = {
   pointsAmount: number;
   note: string | null;
   eventTitle: string;
+  kind: "LITURGY" | "SERVICE" | null;
   servantName?: string;
+  date: string;
+  isFriday: boolean;
   createdAtLabel: string;
+};
+
+type AttendanceLog = {
+  liturgy: string[];
+  service: string[];
+  liturgyCount: number;
+  serviceCount: number;
+  lastLiturgy: string | null;
+  lastService: string | null;
 };
 
 export default function StudentHomePage() {
@@ -25,7 +37,13 @@ export default function StudentHomePage() {
   const router = useRouter();
   const [totalPoints, setTotalPoints] = useState(0);
   const [transactions, setTransactions] = useState<Tx[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceLog | null>(null);
+  const [phaseName, setPhaseName] = useState<string | null>(null);
+  const [className, setClassName] = useState<string | null>(null);
+  const [servantName, setServantName] = useState<string | null>(null);
   const [showId, setShowId] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [savingSecret, setSavingSecret] = useState(false);
   const [fetching, setFetching] = useState(true);
 
   const load = useCallback(async () => {
@@ -35,6 +53,10 @@ export default function StudentHomePage() {
       if (!res.ok) throw new Error(data.error || "تعذر التحميل");
       setTotalPoints(data.totalPoints);
       setTransactions(data.transactions);
+      setAttendance(data.attendance);
+      setPhaseName(data.phaseName ?? null);
+      setClassName(data.className ?? null);
+      setServantName(data.servantName ?? null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "خطأ");
     } finally {
@@ -55,6 +77,58 @@ export default function StudentHomePage() {
     void load();
   }, [user, loading, router, load]);
 
+  async function changePin(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSavingSecret(true);
+    const fd = new FormData(e.currentTarget);
+    const currentPin = String(fd.get("currentPin") || "");
+    const newPin = String(fd.get("newPin") || "");
+    const confirmPin = String(fd.get("confirmPin") || "");
+    if (newPin !== confirmPin) {
+      toast.error("الرقم السري الجديد غير متطابق");
+      setSavingSecret(false);
+      return;
+    }
+    try {
+      const res = await fetch("/api/profile/secret", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "pin", currentPin, newPin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "تعذر تغيير الرقم السري");
+      toast.success("تم تحديث الرقم السري");
+      e.currentTarget.reset();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "خطأ");
+    } finally {
+      setSavingSecret(false);
+    }
+  }
+
+  async function changePassword(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSavingSecret(true);
+    const fd = new FormData(e.currentTarget);
+    const currentSecret = String(fd.get("currentSecret") || "");
+    const newSecret = String(fd.get("newSecret") || "");
+    try {
+      const res = await fetch("/api/profile/secret", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "password", currentSecret, newSecret }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "تعذر تغيير كلمة المرور");
+      toast.success("تم تحديث كلمة المرور");
+      e.currentTarget.reset();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "خطأ");
+    } finally {
+      setSavingSecret(false);
+    }
+  }
+
   if (loading || !user) {
     return (
       <PageShell>
@@ -70,14 +144,31 @@ export default function StudentHomePage() {
           <p className="text-sm text-slate-500">{church?.name}</p>
           <h1 className="text-2xl font-black text-[var(--color-navy)]">أهلاً، {user.fullName.split(" ")[0]}</h1>
         </div>
-        <button
-          type="button"
-          onClick={() => logout()}
-          className="rounded-2xl bg-white p-3 text-slate-500 shadow-sm"
-          aria-label="خروج"
-        >
-          <LogOut className="h-5 w-5" />
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowSecret(true)}
+            className="rounded-2xl bg-white p-3 text-slate-500 shadow-sm"
+            aria-label="بيانات الدخول"
+          >
+            <KeyRound className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="rounded-2xl bg-white p-3 text-slate-500 shadow-sm"
+            aria-label="خروج"
+          >
+            <LogOut className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+
+      <div className="glass mb-5 grid gap-2 rounded-3xl p-4 text-xs text-slate-600 sm:grid-cols-2">
+        <p>المرحلة: <strong>{phaseName ?? "—"}</strong></p>
+        <p>الفصل: <strong>{className ?? "بدون فصل"}</strong></p>
+        <p className="font-mono">اسم المستخدم: {user.username ?? "—"}</p>
+        <p>الخادم المسؤول: <strong>{servantName ?? "—"}</strong></p>
       </div>
 
       <motion.div
@@ -113,7 +204,43 @@ export default function StudentHomePage() {
       </motion.button>
 
       <section className="mt-8">
-        <h2 className="mb-4 text-lg font-black text-[var(--color-navy)]">سجل المعاملات والمواظبة</h2>
+        <h2 className="mb-4 text-lg font-black text-[var(--color-navy)]">حضور الجمعة</h2>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="glass rounded-3xl p-4">
+            <p className="text-sm font-black text-[var(--color-emerald)]">القداس (القداس الإلهي)</p>
+            <p className="mt-1 text-2xl font-black text-[var(--color-navy)]">
+              {attendance?.liturgyCount ?? 0} <span className="text-sm font-bold text-slate-500">مرة</span>
+            </p>
+            <p className="mt-1 text-xs text-slate-500">آخر حضور: {attendance?.lastLiturgy ?? "—"}</p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {(attendance?.liturgy ?? []).slice(-12).map((date) => (
+                <span key={`l-${date}`} className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-bold text-teal-700">
+                  {date}
+                </span>
+              ))}
+              {!attendance?.liturgy.length && <span className="text-xs text-slate-400">لا يوجد سجل بعد</span>}
+            </div>
+          </div>
+          <div className="glass rounded-3xl p-4">
+            <p className="text-sm font-black text-[var(--color-gold)]">الخدمة</p>
+            <p className="mt-1 text-2xl font-black text-[var(--color-navy)]">
+              {attendance?.serviceCount ?? 0} <span className="text-sm font-bold text-slate-500">مرة</span>
+            </p>
+            <p className="mt-1 text-xs text-slate-500">آخر حضور: {attendance?.lastService ?? "—"}</p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {(attendance?.service ?? []).slice(-12).map((date) => (
+                <span key={`s-${date}`} className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                  {date}
+                </span>
+              ))}
+              {!attendance?.service.length && <span className="text-xs text-slate-400">لا يوجد سجل بعد</span>}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="mb-4 text-lg font-black text-[var(--color-navy)]">سجل النقط</h2>
         <div className="space-y-3">
           {transactions.length === 0 && !fetching && (
             <div className="glass rounded-3xl p-6 text-center text-slate-500">لا توجد معاملات بعد</div>
@@ -132,15 +259,14 @@ export default function StudentHomePage() {
                   {t.note ? ` — ${t.note}` : ""}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  {t.createdAtLabel}
-                  {t.servantName ? ` · بواسطة ${t.servantName}` : ""}
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 font-bold">{t.date}</span>
+                  {t.isFriday ? " (جمعة)" : ""}
+                  {t.servantName ? ` · بواسطة الخادم ${t.servantName}` : ""}
                 </p>
               </div>
               <span
                 className={`shrink-0 rounded-full px-3 py-1 text-sm font-black ${
-                  t.pointsAmount >= 0
-                    ? "bg-teal-50 text-teal-700"
-                    : "bg-rose-50 text-rose-700"
+                  t.pointsAmount >= 0 ? "bg-teal-50 text-teal-700" : "bg-rose-50 text-rose-700"
                 }`}
               >
                 {t.pointsAmount >= 0 ? "+" : ""}
@@ -162,6 +288,37 @@ export default function StudentHomePage() {
           <Button variant="secondary" onClick={() => setShowId(false)}>
             إغلاق
           </Button>
+        </div>
+      </Modal>
+
+      <Modal open={showSecret} onClose={() => setShowSecret(false)} title="بيانات الدخول" className="sm:max-w-lg">
+        <div className="space-y-6">
+          <div className="rounded-2xl bg-white p-4">
+            <p className="text-xs text-slate-500">اسم المستخدم</p>
+            <p className="font-mono text-lg font-black text-[var(--color-navy)]">{user.username ?? "—"}</p>
+            <p className="mt-2 text-xs text-slate-500">
+              يمكنك الدخول باسم المستخدم وكلمة المرور، أو برقم التليفون والرقم السري PIN.
+            </p>
+          </div>
+
+          <form onSubmit={changePassword} className="space-y-3">
+            <h3 className="font-black text-[var(--color-navy)]">تغيير كلمة المرور</h3>
+            <Input name="currentSecret" label="كلمة المرور الحالية" type="password" required />
+            <Input name="newSecret" label="كلمة المرور الجديدة (8 أحرف على الأقل)" type="password" minLength={8} required />
+            <Button type="submit" className="w-full" disabled={savingSecret}>
+              حفظ كلمة المرور
+            </Button>
+          </form>
+
+          <form onSubmit={changePin} className="space-y-3">
+            <h3 className="font-black text-[var(--color-navy)]">تغيير الرقم السري (PIN)</h3>
+            <Input name="currentPin" label="الرقم السري الحالي" type="password" inputMode="numeric" required />
+            <Input name="newPin" label="الرقم السري الجديد (4–8 أرقام)" type="password" inputMode="numeric" minLength={4} maxLength={8} required />
+            <Input name="confirmPin" label="تأكيد الرقم السري الجديد" type="password" inputMode="numeric" minLength={4} maxLength={8} required />
+            <Button type="submit" variant="secondary" className="w-full" disabled={savingSecret}>
+              حفظ الرقم السري
+            </Button>
+          </form>
         </div>
       </Modal>
     </PageShell>

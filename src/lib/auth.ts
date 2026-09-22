@@ -6,7 +6,9 @@ import { prisma } from "./prisma";
 import type { Role } from "./utils";
 
 const COOKIE_NAME = "tayoo_session";
-const SESSION_DAYS = 30;
+/** Sessions persist for 30 days; users only leave after an explicit logout. */
+export const SESSION_DAYS = 30;
+export const SESSION_MAX_AGE_SECONDS = SESSION_DAYS * 24 * 60 * 60;
 
 function getSecret() {
   const secret = process.env.JWT_SECRET;
@@ -60,7 +62,7 @@ export async function setSessionCookie(token: string) {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: SESSION_DAYS * 24 * 60 * 60,
+    maxAge: SESSION_MAX_AGE_SECONDS,
   });
 }
 

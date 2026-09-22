@@ -2,14 +2,26 @@ import { prisma } from "@/lib/prisma";
 import { jsonError } from "@/lib/api";
 import { requireSession } from "@/lib/auth";
 import { buildVisitationWorkbook } from "@/lib/excel";
+import { resolveScope } from "@/lib/scope";
 
 export async function GET(req: Request) {
-  const { session, error } = await requireSession(["SERVANT", "CHURCH_ADMIN"]);
+  const { session, error } = await requireSession([
+    "SUPER_ADMIN",
+    "CHURCH_ADMIN",
+    "PHASE_ADMIN",
+    "PHASE_SERVANT",
+  ]);
   if (error || !session) return error!;
   if (!session.churchId) return jsonError("لا توجد كنيسة مرتبطة", 400);
 
   const { searchParams } = new URL(req.url);
   const grade = searchParams.get("grade")?.trim();
+  const phaseId = searchParams.get("phaseId")?.trim();
+
+  const scope = await resolveScope(session);
+  if (phaseId && !scope.churchWide && !scope.phaseIds.includes(phaseId)) {
+    return jsonError("لا تملك صلاحية على هذه المرحلة", 403);
+  }
 
   const church = await prisma.church.findUnique({ where: { id: session.churchId } });
   if (!church) return jsonError("الكنيسة غير موجودة", 404);
@@ -18,6 +30,8 @@ export async function GET(req: Request) {
     where: {
       churchId: session.churchId,
       role: "STUDENT",
+      ...(scope.churchWide ? {} : { phaseId: { in: scope.phaseIds } }),
+      ...(phaseId ? { phaseId } : {}),
       ...(grade ? { grade } : {}),
     },
     orderBy: { fullName: "asc" },

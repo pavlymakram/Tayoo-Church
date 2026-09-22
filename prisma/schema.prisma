@@ -12,6 +12,8 @@ datasource db {
 model Church {
   id          String   @id @default(uuid())
   name        String
+  /// Dynamic English abbreviation code used to build usernames, e.g. `mar_girgis`.
+  abbreviation String  @unique
   licenseKey  String   @unique @map("license_key")
   defaultMassPoints    Int      @default(5) @map("default_mass_points")
   defaultServicePoints Int      @default(3) @map("default_service_points")
@@ -19,18 +21,63 @@ model Church {
   createdAt   DateTime @default(now()) @map("created_at")
 
   users             User[]
+  phases            Phase[]
+  classes           Class[]
   eventTypes        EventType[]
   pointTransactions PointTransaction[]
-  accessCodes       AccessCode[]
 
   @@map("churches")
+}
+
+/// A stage ("مرحلة") such as `1 إعدادي` inside a sector ("قطاع") such as `PREPARATORY`.
+/// The abbreviation drives the generated usernames: `mar_girgis_prep1_59201`.
+model Phase {
+  id                 String   @id @default(uuid())
+  churchId           String   @map("church_id")
+  name               String
+  abbreviation       String
+  sector             String
+  sectorAbbreviation String   @map("sector_abbreviation")
+  sortOrder          Int      @default(0) @map("sort_order")
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  church  Church  @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  classes Class[]
+  users   User[]
+
+  @@unique([churchId, abbreviation])
+  @@index([churchId])
+  @@index([churchId, sector])
+  @@map("phases")
+}
+
+/// Dynamic class ("فصل") created by phase admins inside one stage.
+model Class {
+  id        String   @id @default(uuid())
+  churchId  String   @map("church_id")
+  phaseId   String   @map("phase_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  church  Church @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  phase   Phase  @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  members User[] @relation("ClassMembers")
+
+  @@unique([churchId, phaseId, name])
+  @@index([churchId])
+  @@index([phaseId])
+  @@map("classes")
 }
 
 model User {
   id              String   @id @default(uuid())
   churchId        String?  @map("church_id")
-  role            String   @default("STUDENT") // STUDENT | SERVANT | CHURCH_ADMIN | SUPER_ADMIN
+  /// STUDENT | PHASE_SERVANT | PHASE_ADMIN | CHURCH_ADMIN | SUPER_ADMIN
+  role            String   @default("STUDENT")
   fullName        String   @map("full_name")
+  /// Auto-generated login identifier, e.g. `mar_girgis_prep1_59201`.
+  username        String?  @unique
   phone           String
   email           String?
   secondaryPhone  String?  @map("secondary_phone")
@@ -45,43 +92,37 @@ model User {
   passwordHash    String?  @map("password_hash")
   pinHash         String?  @map("pin_hash")
   roleSecurityCodeHash String? @map("role_security_code_hash")
+  /// Auto-generated initial password shown once to the creating admin; cleared when
+  /// the owner sets their own password from profile settings.
+  initialPassword String?  @map("initial_password")
+  /// Assigned stage for students and phase servants.
+  phaseId         String?  @map("phase_id")
+  /// Assigned class (فصل) inside the stage.
+  classId         String?  @map("class_id")
+  /// Assigned sector for PHASE_ADMIN (KG | PRIMARY | PREPARATORY | …).
+  sector          String?
+  /// Only the very first church admin of a church may delete other church admins.
+  isFirstAdmin    Boolean  @default(false) @map("is_first_admin")
+  createdById     String?  @map("created_by_id")
   createdAt       DateTime @default(now()) @map("created_at")
 
   church              Church?            @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  phase               Phase?             @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  classRoom           Class?             @relation("ClassMembers", fields: [classId], references: [id], onDelete: SetNull)
   studentTransactions PointTransaction[] @relation("StudentTransactions")
   servantTransactions PointTransaction[] @relation("ServantTransactions")
-  accessCodeLogin      AccessCode?       @relation("AccessCodeLogin")
 
   @@unique([churchId, phone])
   @@index([churchId])
   @@index([churchId, role], map: "idx_users_church_role")
+  @@index([churchId, phaseId])
+  @@index([churchId, classId])
   @@index([email])
   @@index([fullName])
   @@index([qrCodeId])
   @@map("users")
 }
 
-model AccessCode {
-  id          String   @id @default(uuid())
-  code        String   @unique
-  role        String
-  churchId    String?  @map("church_id")
-  loginUserId String   @unique @map("login_user_id")
-  passwordHash String  @map("password_hash")
-  maxUses     Int?     @map("max_uses")
-  usageCount  Int      @default(0) @map("usage_count")
-  expiresAt   DateTime? @map("expires_at")
-  isActive    Boolean  @default(true) @map("is_active")
-  createdById String   @map("created_by_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  church    Church? @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  loginUser User    @relation("AccessCodeLogin", fields: [loginUserId], references: [id], onDelete: Cascade)
-
-  @@index([churchId, role])
-  @@index([isActive, expiresAt])
-  @@map("access_codes")
-}
 
 model EventType {
   id            String   @id @default(uuid())

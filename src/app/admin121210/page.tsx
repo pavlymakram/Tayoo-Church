@@ -17,9 +17,10 @@ export default function SecretAdminPortal() {
       setAuth(data.user, data.church); router.replace(data.redirectTo);
     } catch (error) { toast.error(error instanceof Error ? error.message : "حدث خطأ"); } finally { setLoading(false); }
   }
-  return <PageShell><div className="mb-7"><BrandMark /></div><form onSubmit={submit} className="glass mx-auto max-w-md space-y-4 rounded-3xl p-6"><h1 className="text-2xl font-black text-[var(--color-navy)]">بوابة التحكم والإدارة</h1><p className="text-sm text-slate-600">للخدام وأدمن الكنيسة ومدير النظام فقط.</p>
-    <Input name="code" label="كود الخدمة / الكود السري" placeholder="SERV-102" required autoComplete="off" />
-    <Input name="secret" label="كلمة المرور / PIN" type="password" required />
+  return <PageShell><div className="mb-7"><BrandMark /></div><form onSubmit={submit} className="glass mx-auto max-w-md space-y-4 rounded-3xl p-6"><h1 className="text-2xl font-black text-[var(--color-navy)]">بوابة التحكم والإدارة</h1><p className="text-sm text-slate-600">للخدام وأدمن الكنيسة ومدير النظام فقط — استخدم اسم المستخدم المولّد تلقائياً وكلمة المرور.</p>
+    <Input name="code" label="اسم المستخدم أو رقم التليفون" placeholder="mar_girgis_admin_48291" required autoComplete="username" />
+    <Input name="secret" label="كلمة المرور" type="password" required autoComplete="current-password" />
     <Button type="submit" className="w-full" disabled={loading}>{loading ? "جارٍ التحقق..." : "دخول البوابة"}</Button>
+    <p className="text-center text-xs text-slate-500">للحصول على بيانات الدخول تواصل مع أدمن الكنيسة.</p>
   </form></PageShell>;
 }

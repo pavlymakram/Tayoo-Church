@@ -2,9 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { jsonError, jsonOk } from "@/lib/api";
 import { requireSession } from "@/lib/auth";
 import { sanitizeUser } from "@/lib/sanitize";
+import { resolveScope } from "@/lib/scope";
 
 export async function GET(req: Request) {
-  const { session, error } = await requireSession(["SERVANT", "CHURCH_ADMIN", "SUPER_ADMIN"]);
+  const { session, error } = await requireSession(["SUPER_ADMIN", "CHURCH_ADMIN", "PHASE_ADMIN", "PHASE_SERVANT"]);
   if (error || !session) return error!;
 
   if (!session.churchId && session.role !== "SUPER_ADMIN") {
@@ -16,14 +17,20 @@ export async function GET(req: Request) {
   const grade = searchParams.get("grade")?.trim();
   const qr = searchParams.get("qr")?.trim();
   const id = searchParams.get("id")?.trim();
+  const phaseId = searchParams.get("phaseId")?.trim();
+  const classId = searchParams.get("classId")?.trim();
   const page = Math.max(1, Number(searchParams.get("page") || 1));
   const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") || 50)));
+
+  // Servants only ever reach students inside their own stage/sector.
+  const scope = await resolveScope(session);
+  const scopeFilter = scope.churchWide ? {} : { phaseId: { in: scope.phaseIds } };
 
   const churchId = session.churchId!;
 
   if (qr) {
     const student = await prisma.user.findFirst({
-      where: { churchId, role: "STUDENT", qrCodeId: qr },
+      where: { churchId, role: "STUDENT", qrCodeId: qr, ...scopeFilter },
     });
     if (!student) return jsonError("لم يتم العثور على المخدوم", 404);
     const totalPoints = await sumPoints(student.id, churchId);
@@ -32,7 +39,7 @@ export async function GET(req: Request) {
 
   if (id) {
     const student = await prisma.user.findFirst({
-      where: { id, churchId, role: "STUDENT" },
+      where: { id, churchId, role: "STUDENT", ...scopeFilter },
     });
     if (!student) return jsonError("لم يتم العثور على المخدوم", 404);
     const totalPoints = await sumPoints(student.id, churchId);
@@ -42,12 +49,16 @@ export async function GET(req: Request) {
   const where = {
       churchId,
       role: "STUDENT",
+      ...scopeFilter,
       ...(grade ? { grade } : {}),
+      ...(phaseId ? { phaseId } : {}),
+      ...(classId ? { classId } : {}),
       ...(q
         ? {
             OR: [
               { fullName: { contains: q } },
               { phone: { contains: q } },
+              { username: { contains: q.toLowerCase() } },
             ],
           }
         : {}),
