@@ -73,10 +73,10 @@ export function StaffBottomNav() {
   ].filter((item) => item.show);
 
   // Keep every icon + label legible on narrow screens: full-size touch targets
-  // in a swipeable rail (no squeezing). Mobile swipes horizontally; desktop fits.
+  // in a swipeable rail (no squeezing). Mobile swipes horizontally; desktop centers.
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-200/80 bg-white/95 backdrop-blur-xl safe-bottom">
-      <div className="no-scrollbar mx-auto flex max-w-5xl flex-nowrap items-stretch gap-2 overflow-x-auto scroll-smooth px-3 pt-2 snap-x snap-mandatory">
+      <div className="no-scrollbar mx-auto flex w-full max-w-5xl flex-nowrap items-stretch justify-start gap-2 overflow-x-auto scroll-smooth px-3 pt-2 snap-x snap-mandatory md:justify-center lg:justify-center">
         {items.map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
