@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -10,13 +10,19 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { ROLE_HOME } from "@/lib/utils";
 
 export default function StaffAuthPage() {
-  const [loading, setLoading] = useState(false);
-  const { setAuth } = useAuth();
+  const [loggingIn, setLoggingIn] = useState(false);
+  const { user, loading, setAuth } = useAuth();
   const router = useRouter();
+
+  // PWA guard: a live session can never render this form via Back button.
+  useEffect(() => {
+    if (loading || !user) return;
+    router.replace(user.role === "STUDENT" ? ROLE_HOME.STUDENT : ROLE_HOME[user.role] ?? "/servant");
+  }, [user, loading, router]);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setLoading(true);
+    setLoggingIn(true);
     const fd = new FormData(e.currentTarget);
     try {
       const res = await fetch("/api/auth/staff-login", {
@@ -36,8 +42,12 @@ export default function StaffAuthPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "خطأ");
     } finally {
-      setLoading(false);
+      setLoggingIn(false);
     }
+  }
+
+  if (loading || user) {
+    return <PageShell><p className="py-20 text-center text-sm font-bold text-slate-500">جارٍ التحقق من الجلسة...</p></PageShell>;
   }
 
   return (
@@ -60,8 +70,8 @@ export default function StaffAuthPage() {
           autoComplete="username"
         />
         <Input name="password" label="كلمة المرور" type="password" required autoComplete="current-password" />
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? "جارٍ الدخول..." : "دخول لوحة الخدمة"}
+        <Button type="submit" className="w-full" disabled={loggingIn}>
+          {loggingIn ? "جارٍ الدخول..." : "دخول لوحة الخدمة"}
         </Button>
         <p className="text-center text-xs text-slate-500">
           للدخول كمدير نظام استخدم بوابة <span className="font-bold">/admin121210</span>

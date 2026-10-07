@@ -44,6 +44,16 @@ body {
   .safe-bottom {
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
+
+  /* Hide scrollbars on swipeable mobile rails while keeping scroll. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 input,

@@ -1,24 +1,30 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BrandMark, PageShell } from "@/components/layout/shell";
 import { Button, Input, Select, TextArea } from "@/components/ui/form";
 import { useAuth } from "@/components/providers/auth-provider";
-import { GRADES } from "@/lib/utils";
+import { GRADES, ROLE_HOME } from "@/lib/utils";
 
 export default function StudentAuthPage() {
   const [mode, setMode] = useState<"login" | "register">("register");
-  const [loading, setLoading] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
   const [isMotherWorking, setIsMotherWorking] = useState(false);
-  const { setAuth } = useAuth();
+  const { user, loading, setAuth } = useAuth();
   const router = useRouter();
+
+  // Same PWA guard as `/`: a live session can never render this form.
+  useEffect(() => {
+    if (loading || !user) return;
+    router.replace(user.role === "STUDENT" ? "/student" : ROLE_HOME[user.role] ?? "/servant");
+  }, [user, loading, router]);
 
   async function onLogin(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setLoading(true);
+    setLoggingIn(true);
     const fd = new FormData(e.currentTarget);
     try {
       const res = await fetch("/api/auth/student-login", {
@@ -38,13 +44,13 @@ export default function StudentAuthPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "خطأ");
     } finally {
-      setLoading(false);
+      setLoggingIn(false);
     }
   }
 
   async function onRegister(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setLoading(true);
+    setLoggingIn(true);
     const fd = new FormData(e.currentTarget);
     try {
       const res = await fetch("/api/auth/student-register", {
@@ -73,8 +79,12 @@ export default function StudentAuthPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "خطأ");
     } finally {
-      setLoading(false);
+      setLoggingIn(false);
     }
+  }
+
+  if (loading || user) {
+    return <PageShell><p className="py-20 text-center text-sm font-bold text-slate-500">جارٍ التحقق من الجلسة...</p></PageShell>;
   }
 
   return (
@@ -110,8 +120,8 @@ export default function StudentAuthPage() {
           <Input name="churchLicenseKey" label="مفتاح ترخيص الكنيسة (اختياري)" placeholder="TAYOO-...." />
           <Input name="username" label="اسم المستخدم" placeholder="mar_ph_user_53971" required autoComplete="username" />
           <Input name="pin" label="الرقم السري (PIN)" type="password" required minLength={4} />
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "جارٍ الدخول..." : "دخول"}
+          <Button type="submit" className="w-full" disabled={loggingIn}>
+            {loggingIn ? "جارٍ الدخول..." : "دخول"}
           </Button>
         </form>
       ) : (
@@ -143,8 +153,8 @@ export default function StudentAuthPage() {
           </label>
           {isMotherWorking && <Input name="motherJob" label="وظيفة الأم" />}
           <Input name="pin" label="اختر رقم سري (PIN) من 4–8 أرقام" type="password" required minLength={4} maxLength={8} />
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "جارٍ التسجيل..." : "تسجيل وإنشاء الـ ID"}
+          <Button type="submit" className="w-full" disabled={loggingIn}>
+            {loggingIn ? "جارٍ التسجيل..." : "تسجيل وإنشاء الـ ID"}
           </Button>
         </form>
       )}
