@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { NextResponse } from "next/server";
 import { jsonError, jsonOk, parseBody, readJson } from "@/lib/api";
 import { hashPassword, requireSession, type SessionPayload } from "@/lib/auth";
 import { allocateUsername, buildUsername, generateInitialPassword } from "@/lib/credentials";
@@ -130,7 +131,7 @@ export async function GET(req: Request) {
       : [];
   const pointsMap = new Map(aggregates.map((a) => [a.studentId, a._sum.pointsAmount ?? 0]));
 
-  return jsonOk({
+  return NextResponse.json({
     pagination: { page, limit, total, hasMore: page * limit < total },
     phases,
     classes,
@@ -148,6 +149,12 @@ export async function GET(req: Request) {
       className: user.classRoom?.name ?? null,
       totalPoints: user.role === "STUDENT" ? pointsMap.get(user.id) ?? 0 : undefined,
     })),
+  }, {
+    headers: {
+      // Short edge cache keeps servant lists snappy; session scoping still
+      // enforced per-request since responses vary by cookie.
+      "Cache-Control": "private, max-age=10, stale-while-revalidate=30",
+    },
   });
 }
 

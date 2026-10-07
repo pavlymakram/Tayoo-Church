@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { QrScanner } from "@/components/scanner/qr-scanner";
 import { useAuth } from "@/components/providers/auth-provider";
+import { LITURGY_CUTOFF_MESSAGE, isLiturgyScanOpen } from "@/lib/attendance";
 
 export default function QuickScanPage() {
   return (
@@ -33,6 +34,20 @@ function QuickScanContent() {
   const { user, loading, can } = useAuth();
   const kindParam = params.get("kind");
   const kind = kindParam === "mass" || kindParam === "service" ? kindParam : null;
+  const [now, setNow] = useState(() => new Date());
+  const liturgyClosed = kind === "mass" && !isLiturgyScanOpen(now);
+
+  useEffect(() => {
+    if (kind !== "mass") return;
+    setNow(new Date());
+    const id = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(id);
+  }, [kind]);
+
+  const closedNotice = useMemo(
+    () => (liturgyClosed ? LITURGY_CUTOFF_MESSAGE : null),
+    [liturgyClosed]
+  );
 
   useEffect(() => {
     if (loading) return;
@@ -45,6 +60,11 @@ function QuickScanContent() {
   }, [user, loading, router, can]);
 
   async function scan(qrCodeId: string) {
+    const now = new Date();
+    if (kind === "mass" && !isLiturgyScanOpen(now)) {
+      toast.error(LITURGY_CUTOFF_MESSAGE);
+      return;
+    }
     const res = await fetch("/api/attendance/instant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -94,8 +114,22 @@ function QuickScanContent() {
             <p className="mb-4 text-sm text-slate-600">
               الكاميرا مفتوحة الآن؛ يتم تسجيل كل QR تلقائياً وتبقى جاهزة للمخدوم التالي.
             </p>
+            {closedNotice && (
+              <div
+                role="alert"
+                className="mb-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold leading-relaxed text-rose-700"
+              >
+                {closedNotice}
+              </div>
+            )}
             <div className="glass rounded-3xl p-4">
-              <QrScanner autoStart keepOpen onScan={scan} />
+              {liturgyClosed ? (
+                <p className="py-10 text-center text-sm font-bold text-slate-500">
+                  تم إغلاق مسح القداس — متاح مجدداً قبل الساعة 8:00 صباحاً.
+                </p>
+              ) : (
+                <QrScanner autoStart keepOpen onScan={scan} />
+              )}
             </div>
           </div>
         )}

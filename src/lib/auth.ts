@@ -63,6 +63,9 @@ export async function setSessionCookie(token: string) {
     secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
+    // Explicit Expires keeps the 30-day session alive across tab closes
+    // and full browser restarts until an explicit logout clears it.
+    expires: new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000),
   });
 }
 

@@ -59,44 +59,22 @@ export async function POST(req: Request) {
       });
     }
 
-    // Students authenticate with their generated username/password, or with the legacy
-    // name/phone + PIN pair.
+    // Strict path: generated username (e.g. mar_ph_user_53971) + secret only.
+    // Full-name/phone fallbacks are intentionally removed.
     const byUsername = await prisma.user.findFirst({
       where: { role: "STUDENT", username: identifier.toLowerCase() },
       include: { church: true },
     });
-    if (byUsername?.passwordHash && (await verifyPassword(secret, byUsername.passwordHash))) {
-      if (byUsername.church && !byUsername.church.isActive) return jsonError("ترخيص الكنيسة موقوف", 403);
-      await signIn(byUsername);
-      return jsonOk({
-        user: sanitizeUser(byUsername),
-        church: byUsername.church ? { id: byUsername.church.id, name: byUsername.church.name } : null,
-        redirectTo: ROLE_HOME.STUDENT,
-      });
-    }
-
-    const candidates = await prisma.user.findMany({
-      where: { role: "STUDENT", OR: [{ phone: identifier }, { fullName: identifier }] },
-      include: { church: true },
-      take: 10,
-    });
-    if (!candidates.length) return jsonError("بيانات الدخول غير صحيحة", 401);
-
-    let user: (typeof candidates)[number] | null = null;
-    for (const candidate of candidates) {
-      if (candidate.church && !candidate.church.isActive) continue;
-      const valid = Boolean(candidate.pinHash && (await verifyPassword(secret, candidate.pinHash)));
-      if (valid) {
-        user = candidate;
-        break;
-      }
-    }
-    if (!user) return jsonError("بيانات الدخول غير صحيحة", 401);
-
-    await signIn(user);
+    if (!byUsername) return jsonError("بيانات الدخول غير صحيحة", 401);
+    if (byUsername.church && !byUsername.church.isActive) return jsonError("ترخيص الكنيسة موقوف", 403);
+    const pinOk = byUsername.pinHash ? await verifyPassword(secret, byUsername.pinHash) : false;
+    const passwordOk =
+      !pinOk && byUsername.passwordHash ? await verifyPassword(secret, byUsername.passwordHash) : false;
+    if (!pinOk && !passwordOk) return jsonError("بيانات الدخول غير صحيحة", 401);
+    await signIn(byUsername);
     return jsonOk({
-      user: sanitizeUser(user),
-      church: user.church ? { id: user.church.id, name: user.church.name } : null,
+      user: sanitizeUser(byUsername),
+      church: byUsername.church ? { id: byUsername.church.id, name: byUsername.church.name } : null,
       redirectTo: ROLE_HOME.STUDENT,
     });
   } catch (error) {

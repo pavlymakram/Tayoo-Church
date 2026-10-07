@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { jsonError, jsonOk, readJson } from "@/lib/api";
 import { requireSession } from "@/lib/auth";
-import { classifyEvent, formatShortDate } from "@/lib/attendance";
+import { classifyEvent, formatShortDate, isLiturgyScanOpen, LITURGY_CUTOFF_MESSAGE } from "@/lib/attendance";
 import { resolveScope } from "@/lib/scope";
 
 const eventNames = { mass: "القداس الإلهي", service: "حضور الخدمة / مدارس الأحد" } as const;
@@ -25,6 +25,11 @@ export async function POST(req: Request) {
   const kind: keyof typeof eventNames | null = rawKind === "mass" || rawKind === "service" ? rawKind : null;
   const qrCodeId = typeof body?.qrCodeId === "string" ? body.qrCodeId.trim() : "";
   if (!kind || !qrCodeId) return jsonError("بيانات المسح غير صالحة");
+
+  // Strict Liturgy window: registration closes at 08:00 Cairo time (EEST).
+  if (kind === "mass" && !isLiturgyScanOpen(new Date())) {
+    return jsonError(LITURGY_CUTOFF_MESSAGE, 403);
+  }
 
   const scope = await resolveScope(session);
   const churchId = session.churchId;

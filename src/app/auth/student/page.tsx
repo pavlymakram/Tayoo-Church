@@ -26,8 +26,7 @@ export default function StudentAuthPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           churchLicenseKey: String(fd.get("churchLicenseKey") || ""),
-          phone: String(fd.get("phone") || "") || undefined,
-          fullName: String(fd.get("fullName") || "") || undefined,
+          username: String(fd.get("username") || ""),
           pin: String(fd.get("pin") || ""),
         }),
       });
@@ -107,9 +106,9 @@ export default function StudentAuthPage() {
       {mode === "login" ? (
         <form onSubmit={onLogin} className="glass space-y-4 rounded-3xl p-5">
           <h1 className="text-2xl font-black text-[var(--color-navy)]">دخول المخدوم</h1>
+          <p className="text-sm text-slate-600">ادخل اسم المستخدم المولّد لك (مثال: mar_ph_user_53971) + الرقم السري (PIN).</p>
           <Input name="churchLicenseKey" label="مفتاح ترخيص الكنيسة (اختياري)" placeholder="TAYOO-...." />
-          <Input name="phone" label="رقم التليفون" placeholder="01xxxxxxxxx" inputMode="tel" />
-          <Input name="fullName" label="أو الاسم الرباعي" placeholder="الاسم بالكامل" />
+          <Input name="username" label="اسم المستخدم" placeholder="mar_ph_user_53971" required autoComplete="username" />
           <Input name="pin" label="الرقم السري (PIN)" type="password" required minLength={4} />
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "جارٍ الدخول..." : "دخول"}

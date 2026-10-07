@@ -67,7 +67,7 @@ export default function StudentHomePage() {
   useEffect(() => {
     if (loading) return;
     if (!user) {
-      router.replace("/auth/student");
+      router.replace("/");
       return;
     }
     if (user.role !== "STUDENT") {
@@ -98,29 +98,6 @@ export default function StudentHomePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "تعذر تغيير الرقم السري");
       toast.success("تم تحديث الرقم السري");
-      e.currentTarget.reset();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "خطأ");
-    } finally {
-      setSavingSecret(false);
-    }
-  }
-
-  async function changePassword(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSavingSecret(true);
-    const fd = new FormData(e.currentTarget);
-    const currentSecret = String(fd.get("currentSecret") || "");
-    const newSecret = String(fd.get("newSecret") || "");
-    try {
-      const res = await fetch("/api/profile/secret", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "password", currentSecret, newSecret }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "تعذر تغيير كلمة المرور");
-      toast.success("تم تحديث كلمة المرور");
       e.currentTarget.reset();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "خطأ");
@@ -292,30 +269,21 @@ export default function StudentHomePage() {
       </Modal>
 
       <Modal open={showSecret} onClose={() => setShowSecret(false)} title="بيانات الدخول" className="sm:max-w-lg">
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div className="rounded-2xl bg-white p-4">
             <p className="text-xs text-slate-500">اسم المستخدم</p>
             <p className="font-mono text-lg font-black text-[var(--color-navy)]">{user.username ?? "—"}</p>
-            <p className="mt-2 text-xs text-slate-500">
-              يمكنك الدخول باسم المستخدم وكلمة المرور، أو برقم التليفون والرقم السري PIN.
+            <p className="mt-2 text-xs leading-relaxed text-slate-500">
+              الدخول باسم المستخدم المولّد لك + الرقم السري (PIN) فقط.
             </p>
           </div>
 
-          <form onSubmit={changePassword} className="space-y-3">
-            <h3 className="font-black text-[var(--color-navy)]">تغيير كلمة المرور</h3>
-            <Input name="currentSecret" label="كلمة المرور الحالية" type="password" required />
-            <Input name="newSecret" label="كلمة المرور الجديدة (8 أحرف على الأقل)" type="password" minLength={8} required />
-            <Button type="submit" className="w-full" disabled={savingSecret}>
-              حفظ كلمة المرور
-            </Button>
-          </form>
-
           <form onSubmit={changePin} className="space-y-3">
-            <h3 className="font-black text-[var(--color-navy)]">تغيير الرقم السري (PIN)</h3>
+            <h3 className="font-black text-[var(--color-navy)]">الرقم السري (PIN)</h3>
             <Input name="currentPin" label="الرقم السري الحالي" type="password" inputMode="numeric" required />
             <Input name="newPin" label="الرقم السري الجديد (4–8 أرقام)" type="password" inputMode="numeric" minLength={4} maxLength={8} required />
             <Input name="confirmPin" label="تأكيد الرقم السري الجديد" type="password" inputMode="numeric" minLength={4} maxLength={8} required />
-            <Button type="submit" variant="secondary" className="w-full" disabled={savingSecret}>
+            <Button type="submit" className="w-full" disabled={savingSecret}>
               حفظ الرقم السري
             </Button>
           </form>

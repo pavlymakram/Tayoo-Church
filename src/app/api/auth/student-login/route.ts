@@ -12,6 +12,9 @@ export async function POST(req: Request) {
   if (parsed.error) return parsed.error;
   const data = parsed.data;
 
+  // Strict student auth: generated username (e.g. mar_ph_user_53971) + PIN/secret only.
+  const username = data.username.trim().toLowerCase();
+
   let churchId: string | undefined;
   if (data.churchLicenseKey) {
     const church = await prisma.church.findUnique({
@@ -21,28 +24,26 @@ export async function POST(req: Request) {
     churchId = church.id;
   }
 
-  const candidates = await prisma.user.findMany({
+  const user = await prisma.user.findFirst({
     where: {
       role: "STUDENT",
+      username,
       ...(churchId ? { churchId } : {}),
-      ...(data.phone
-        ? { phone: data.phone.trim() }
-        : { fullName: { contains: data.fullName!.trim() } }),
     },
-    take: 5,
   });
 
-  if (candidates.length === 0) return jsonError("بيانات الدخول غير صحيحة", 401);
-
-  let user = candidates[0];
-  if (candidates.length > 1 && data.fullName && !data.phone) {
-    const exact = candidates.find((c) => c.fullName === data.fullName!.trim());
-    if (exact) user = exact;
+  if (!user) return jsonError("بيانات الدخول غير صحيحة", 401);
+  if (user.churchId) {
+    const church = await prisma.church.findUnique({ where: { id: user.churchId } });
+    if (!church || !church.isActive) return jsonError("ترخيص الكنيسة موقوف", 403);
   }
 
-  if (!user.pinHash) return jsonError("بيانات الدخول غير صحيحة", 401);
-  const ok = await verifyPassword(data.pin, user.pinHash);
-  if (!ok) return jsonError("الرقم السري غير صحيح", 401);
+  // The student's single secret is stored as the PIN hash, with legacy
+  // password hashes still honored for accounts created before the merge.
+  const pinOk = user.pinHash ? await verifyPassword(data.pin, user.pinHash) : false;
+  const legacyPasswordOk =
+    !pinOk && user.passwordHash ? await verifyPassword(data.pin, user.passwordHash) : false;
+  if (!pinOk && !legacyPasswordOk) return jsonError("الرقم السري غير صحيح", 401);
 
   const token = await createSessionToken({
     userId: user.id,

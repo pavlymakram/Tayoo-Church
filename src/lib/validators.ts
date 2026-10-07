@@ -33,11 +33,8 @@ export const studentRegisterSchema = z.object({
 
 export const studentLoginSchema = z.object({
   churchLicenseKey: z.string().optional(),
-  phone: z.string().optional(),
-  fullName: z.string().optional(),
+  username: z.string().min(3, "اسم المستخدم مطلوب (مثال: mar_ph_user_53971)"),
   pin: z.string().min(4, "الرقم السري مطلوب"),
-}).refine((d) => d.phone || d.fullName, {
-  message: "أدخل رقم التليفون أو الاسم",
 });
 
 /** Staff sign in with the auto-generated username (or phone) + password. */

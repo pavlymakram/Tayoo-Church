@@ -17,6 +17,43 @@ export const ATTENDANCE_KIND_LABELS: Record<AttendanceKind, string> = {
 export const LITURGY_EVENT_TITLE = "القداس الإلهي";
 export const SERVICE_EVENT_TITLE = "حضور الخدمة / مدارس الأحد";
 
+/** Liturgy (القداس) registration closes sharply at 08:00 Cairo time (EEST). */
+export const LITURGY_CUTOFF_HOUR = 8;
+export const LITURGY_CUTOFF_MINUTES = LITURGY_CUTOFF_HOUR * 60;
+export const LITURGY_CUTOFF_MESSAGE =
+  "عفواً، انتهى موعد تسجيل حضور القداس (الساعة 8:00 صباحاً)";
+
+function cairoParts(date: Date): { hour: number; minute: number; second: number } {
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Cairo",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(date);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return { hour: get("hour") % 24, minute: get("minute"), second: get("second") };
+}
+
+/** Minutes elapsed since midnight in Cairo (Africa/Cairo). */
+export function cairoMinutesSinceMidnight(date: Date = new Date()): number {
+  const { hour, minute } = cairoParts(date);
+  return hour * 60 + minute;
+}
+
+/** `true` while Liturgy scanning is still permitted (strictly up to 08:00). */
+export function isLiturgyScanOpen(now: Date = new Date()): boolean {
+  const { hour, minute, second } = cairoParts(now);
+  const totalSeconds = hour * 3600 + minute * 60 + second;
+  return totalSeconds <= LITURGY_CUTOFF_MINUTES * 60;
+}
+
+export function liturgyCutoffState(now: Date = new Date()): { open: boolean; message: string | null } {
+  const open = isLiturgyScanOpen(now);
+  return { open, message: open ? null : LITURGY_CUTOFF_MESSAGE };
+}
+
 export function classifyEvent(title: string | null | undefined): AttendanceKind | null {
   if (!title) return null;
   if (title.includes("قداس")) return "LITURGY";

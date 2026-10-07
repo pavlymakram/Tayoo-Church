@@ -10,7 +10,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { ROLE_LABELS, roleLabel } from "@/lib/utils";
 import { sectorLabel } from "@/lib/phases";
 
-/** Profile settings — every account can rotate its own password. */
+/** Profile settings — every account owns exactly ONE secret: الرقم السري (PIN). */
 export default function ProfilePage() {
   const { user, church, loading, role } = useAuth();
   const router = useRouter();
@@ -21,15 +21,15 @@ export default function ProfilePage() {
     if (!user || role === "STUDENT") router.replace("/servant");
   }, [user, loading, router, role]);
 
-  async function changePassword(e: FormEvent<HTMLFormElement>) {
+  async function changePin(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     const fd = new FormData(e.currentTarget);
-    const currentSecret = String(fd.get("currentSecret") || "");
-    const newSecret = String(fd.get("newSecret") || "");
-    const confirm = String(fd.get("confirmSecret") || "");
-    if (newSecret !== confirm) {
-      toast.error("كلمتا المرور غير متطابقتين");
+    const currentPin = String(fd.get("currentPin") || "");
+    const newPin = String(fd.get("newPin") || "");
+    const confirm = String(fd.get("confirmPin") || "");
+    if (newPin !== confirm) {
+      toast.error("الرقم السري الجديد غير متطابق");
       setBusy(false);
       return;
     }
@@ -37,11 +37,11 @@ export default function ProfilePage() {
       const res = await fetch("/api/profile/secret", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "password", currentSecret, newSecret }),
+        body: JSON.stringify({ kind: "pin", currentPin, newPin }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "تعذر تغيير كلمة المرور");
-      toast.success("تم تحديث كلمة المرور — كلمة المرور الأولية أُلغيت");
+      if (!res.ok) throw new Error(data.error || "تعذر تغيير الرقم السري");
+      toast.success("تم تحديث الرقم السري — الرقم الأولي أُلغي");
       e.currentTarget.reset();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "خطأ");
@@ -82,15 +82,15 @@ export default function ProfilePage() {
           )}
         </div>
 
-        <form onSubmit={changePassword} className="glass space-y-3 rounded-3xl p-5">
+        <form onSubmit={changePin} className="glass space-y-3 rounded-3xl p-5">
           <h2 className="flex items-center gap-2 font-black text-[var(--color-navy)]">
-            <KeyRound className="h-4 w-4" /> تغيير كلمة المرور
+            <KeyRound className="h-4 w-4" /> الرقم السري (PIN)
           </h2>
-          <Input name="currentSecret" label="كلمة المرور الحالية" type="password" required />
-          <Input name="newSecret" label="كلمة المرور الجديدة (8 أحرف على الأقل)" type="password" minLength={8} required />
-          <Input name="confirmSecret" label="تأكيد كلمة المرور الجديدة" type="password" minLength={8} required />
+          <Input name="currentPin" label="الرقم السري الحالي" type="password" inputMode="numeric" required />
+          <Input name="newPin" label="الرقم السري الجديد (4–8 أرقام)" type="password" inputMode="numeric" minLength={4} maxLength={8} required />
+          <Input name="confirmPin" label="تأكيد الرقم السري الجديد" type="password" inputMode="numeric" minLength={4} maxLength={8} required />
           <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? "جارٍ الحفظ..." : "حفظ كلمة المرور"}
+            {busy ? "جارٍ الحفظ..." : "حفظ الرقم السري"}
           </Button>
         </form>
       </PageShell>

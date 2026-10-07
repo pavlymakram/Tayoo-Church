@@ -63,7 +63,7 @@ export default function SuperAdminPage() {
   useEffect(() => {
     if (loading) return;
     if (user && user.role !== "SUPER_ADMIN") {
-      router.replace("/");
+      router.replace(user.role === "STUDENT" ? "/" : "/admin121210");
       return;
     }
     if (!user) {

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { jsonError, jsonOk, parseBody, readJson } from "@/lib/api";
 import { requireSession } from "@/lib/auth";
+import { isLiturgyEvent, isLiturgyScanOpen, LITURGY_CUTOFF_MESSAGE } from "@/lib/attendance";
 import {
   pointTransactionSchema,
   updatePointTransactionSchema,
@@ -104,6 +105,10 @@ export async function POST(req: Request) {
   });
   if (!eventType) return jsonError("المناسبة غير موجودة أو غير مفعّلة", 404);
   if (data.pointsAmount === 0) return jsonError("قيمة النقط لا يمكن أن تكون صفر");
+  // Liturgy cutoff also applies to manual point entry for a Liturgy event.
+  if (isLiturgyEvent(eventType.title) && !isLiturgyScanOpen(new Date())) {
+    return jsonError(LITURGY_CUTOFF_MESSAGE, 403);
+  }
 
   const tx = await prisma.pointTransaction.create({
     data: {

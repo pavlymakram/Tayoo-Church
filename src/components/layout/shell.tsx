@@ -72,9 +72,11 @@ export function StaffBottomNav() {
     { href: "/servant/profile", label: "حسابي", icon: UserRound, show: true },
   ].filter((item) => item.show);
 
+  // Keep every icon + label legible on narrow screens: chips share one row,
+  // shrink gracefully, wrap on very small widths, and truncate long labels.
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-200/80 bg-white/90 backdrop-blur-xl safe-bottom">
-      <div className="mx-auto flex max-w-2xl items-stretch justify-around overflow-x-auto px-2 pt-2">
+    <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-200/80 bg-white/95 backdrop-blur-xl safe-bottom">
+      <div className="mx-auto grid w-full max-w-5xl auto-cols-fr grid-flow-col gap-1 overflow-x-auto px-2 pt-2 sm:gap-2 sm:px-4">
         {items.map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
@@ -82,23 +84,26 @@ export function StaffBottomNav() {
             <Link
               key={item.href + item.label}
               href={item.href}
+              title={item.label}
+              aria-current={active ? "page" : undefined}
               className={cn(
-                "flex min-w-16 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-bold transition",
-                active ? "text-[var(--color-emerald)]" : "text-slate-500"
+                "flex min-w-0 flex-col items-center justify-center gap-1 whitespace-nowrap rounded-2xl px-1.5 py-2 text-center text-[10px] font-bold leading-tight transition sm:px-3 sm:text-[11px]",
+                active ? "bg-teal-50 text-[var(--color-emerald)]" : "text-slate-500 hover:text-slate-700"
               )}
             >
-              <Icon className={cn("h-5 w-5", active && "scale-110")} />
-              {item.label}
+              <Icon className={cn("h-5 w-5 shrink-0", active && "scale-110")} />
+              <span className="max-w-full truncate">{item.label}</span>
             </Link>
           );
         })}
         <button
           type="button"
           onClick={() => logout()}
-          className="flex min-w-16 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-bold text-slate-500"
+          title="خروج"
+          className="flex min-w-0 flex-col items-center justify-center gap-1 whitespace-nowrap rounded-2xl px-1.5 py-2 text-center text-[10px] font-bold leading-tight text-slate-500 transition hover:text-slate-700 sm:px-3 sm:text-[11px]"
         >
-          <LogOut className="h-5 w-5" />
-          خروج
+          <LogOut className="h-5 w-5 shrink-0" />
+          <span className="max-w-full truncate">خروج</span>
         </button>
       </div>
     </nav>

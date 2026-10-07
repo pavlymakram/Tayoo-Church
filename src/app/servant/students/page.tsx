@@ -11,6 +11,7 @@ import { UserForm, type ClassChoice, type ManageableUser, type PhaseChoice } fro
 import { StudentPointsPanel } from "@/components/admin/student-points-panel";
 import { useAuth } from "@/components/providers/auth-provider";
 import { GRADES } from "@/lib/utils";
+import { cachedFetch, invalidateCache, primeCache } from "@/lib/cache";
 
 type UserRow = ManageableUser & {
   id: string;
@@ -22,6 +23,14 @@ type UserRow = ManageableUser & {
 };
 
 type IssuedCredentials = { fullName: string; username: string; password: string };
+
+type UsersResponse = {
+  users: UserRow[];
+  phases: PhaseChoice[];
+  classes: ClassChoice[];
+};
+
+const USERS_CACHE_TTL = 15_000;
 
 export default function StudentsPage() {
   const { user, loading, can } = useAuth();
@@ -37,6 +46,7 @@ export default function StudentsPage() {
   const [classId, setClassId] = useState("");
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
@@ -50,35 +60,69 @@ export default function StudentsPage() {
 
   useEffect(() => {
     if (loading) return;
-    if (!user || (user.role === "STUDENT" as string)) {
-      router.replace("/admin121210");
+    if (!user || user.role === "STUDENT") {
+      router.replace(user?.role === "STUDENT" ? "/" : "/admin121210");
       return;
     }
     if (!canManage) router.replace("/servant");
   }, [user, loading, router, canManage]);
 
-  async function load() {
+  function buildQuery() {
     const params = new URLSearchParams();
     if (q.trim()) params.set("q", q.trim());
     if (grade) params.set("grade", grade);
     if (phaseId) params.set("phaseId", phaseId);
     if (classId) params.set("classId", classId);
-    const res = await fetch(`/api/users?${params.toString()}`);
-    if (!res.ok) {
-      toast.error("تعذر تحميل المخدومين");
-      return;
-    }
-    const data = await res.json();
+    return `/api/users?${params.toString()}`;
+  }
+
+  function applyUsersResponse(data: UsersResponse) {
     setUsers((data.users as UserRow[]).filter((row) => row.role === "STUDENT"));
     setPhases(data.phases);
     setClasses(data.classes);
   }
 
+  async function fetchUsers(url: string): Promise<UsersResponse> {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("تعذر تحميل المخدومين");
+    return (await res.json()) as UsersResponse;
+  }
+
+  // SWR-style: instant stale render, then background revalidation.
+  async function load() {
+    const url = buildQuery();
+    try {
+      const hit = await cachedFetch<UsersResponse>(url, () => fetchUsers(url), USERS_CACHE_TTL);
+      applyUsersResponse(hit.data);
+      setListLoading(false);
+      if (hit.cached) {
+        void fetchUsers(url)
+          .then((fresh) => {
+            primeCache(url, fresh);
+            applyUsersResponse(fresh);
+          })
+          .catch(() => undefined);
+      }
+    } catch {
+      setListLoading(false);
+      toast.error("تعذر تحميل المخدومين");
+    }
+  }
+
   useEffect(() => {
     if (loading || !user || !canManage) return;
+    setListLoading(true);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, user, canManage]);
+
+  // Debounced search: reflect typing instantly, hit the API after a pause.
+  useEffect(() => {
+    if (loading || !user || !canManage) return;
+    const id = window.setTimeout(() => void load(), 350);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, grade, phaseId, classId]);
 
   const stats = useMemo(() => {
     const totalPoints = users.reduce((a, s) => a + (s.totalPoints || 0), 0);
@@ -89,6 +133,18 @@ export default function StudentsPage() {
 
   async function saveUser(payload: Record<string, unknown>) {
     setBusy(true);
+    // Optimistic update: reflect edits instantly, roll back on failure.
+    const snapshot = users;
+    const optimisticRow = {
+      id: editing?.id ?? `temp-${Date.now()}`,
+      role: "STUDENT",
+      fullName: String(payload.fullName || editing?.fullName || ""),
+      phone: String(payload.phone || editing?.phone || ""),
+      ...payload,
+    } as UserRow;
+    if (editing) {
+      setUsers((prev) => prev.map((row) => (row.id === editing.id ? { ...row, ...optimisticRow } : row)));
+    }
     try {
       const res = await fetch("/api/users", {
         method: editing ? "PATCH" : "POST",
@@ -107,8 +163,10 @@ export default function StudentsPage() {
       toast.success(editing ? "تم تحديث بيانات المخدوم" : "تمت إضافة المخدوم");
       setShowForm(false);
       setEditing(null);
+      invalidateCache("/api/users");
       await load();
     } catch (err) {
+      setUsers(snapshot);
       toast.error(err instanceof Error ? err.message : "خطأ");
     } finally {
       setBusy(false);
@@ -118,14 +176,18 @@ export default function StudentsPage() {
   async function confirmDelete() {
     if (!deleteTarget) return;
     setBusy(true);
+    const snapshot = users;
+    setUsers((prev) => prev.filter((row) => row.id !== deleteTarget.id));
     try {
       const res = await fetch(`/api/users?id=${encodeURIComponent(deleteTarget.id)}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "تعذر الحذف");
       toast.success("تم حذف المخدوم");
       setDeleteTarget(null);
+      invalidateCache("/api/users");
       await load();
     } catch (err) {
+      setUsers(snapshot);
       toast.error(err instanceof Error ? err.message : "خطأ");
     } finally {
       setBusy(false);
@@ -154,20 +216,21 @@ export default function StudentsPage() {
 return (
     <>
       <PageShell withStaffNav>
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-black text-[var(--color-navy)]">إدارة المخدومين</h1>
-            <p className="text-sm text-slate-600">
-              {stats.total} مخدوم · {stats.totalPoints} طايو — مصنّفون حسب المرحلة والفصل داخل نطاق خدمتك.
+        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-xl font-black text-[var(--color-navy)] sm:text-2xl">إدارة المخدومين</h1>
+            <p className="mt-1 text-xs text-slate-600 sm:text-sm">
+              {listLoading ? "جارٍ التحميل..." : `${stats.total} مخدوم · ${stats.totalPoints} طايو — مصنّفون حسب المرحلة والفصل داخل نطاق خدمتك.`}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="gold" onClick={() => void exportReport()} disabled={exporting}>
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+            <Button type="button" variant="gold" onClick={() => void exportReport()} disabled={exporting} className="w-full sm:w-auto">
               <Download className="h-4 w-4" /> {exporting ? "جارٍ التصدير..." : "تصدير Excel"}
             </Button>
             {canCreate && (
               <Button
                 type="button"
+                className="w-full sm:w-auto"
                 onClick={() => {
                   setFormMode("create");
                   setEditing(null);
@@ -180,8 +243,10 @@ return (
           </div>
         </div>
 
-        <div className="glass mb-5 grid gap-3 rounded-3xl p-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Input label="بحث بالاسم أو التليفون أو اسم المستخدم" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="glass mb-5 grid grid-cols-1 gap-3 rounded-3xl p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="sm:col-span-2 lg:col-span-2">
+            <Input label="بحث بالاسم أو التليفون أو اسم المستخدم" value={q} onChange={(e) => setQ(e.target.value)} placeholder="اكتب للبحث الفوري..." />
+          </div>
           <Select label="المرحلة" value={phaseId} onChange={(e) => setPhaseId(e.target.value)}>
             <option value="">كل المراحل</option>
             {phases.map((phase) => (
@@ -206,8 +271,8 @@ return (
               </option>
             ))}
           </Select>
-          <div className="sm:col-span-2 lg:col-span-4">
-            <Button type="button" variant="secondary" onClick={() => void load()}>
+          <div className="sm:col-span-2 lg:col-span-3">
+            <Button type="button" variant="secondary" onClick={() => void load()} className="w-full sm:w-auto">
               <Search className="h-4 w-4" /> تطبيق الفلاتر
             </Button>
           </div>

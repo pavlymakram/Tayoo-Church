@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/auth/me");
+      const res = await fetch("/api/auth/me", { credentials: "include", cache: "no-store" });
       if (!res.ok) {
         setUser(null);
         setChurch(null);
@@ -79,11 +79,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const logout = useCallback(async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    const currentRole = normalizeRole(user?.role);
+    const isStaffRole =
+      currentRole === "PHASE_SERVANT" ||
+      currentRole === "PHASE_ADMIN" ||
+      currentRole === "CHURCH_ADMIN" ||
+      currentRole === "SUPER_ADMIN";
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } catch {
+      // Cookie is HttpOnly — local state still clears even if the call fails.
+    }
     setUser(null);
     setChurch(null);
-    window.location.href = "/";
-  }, []);
+    // Absolute route isolation: staff gates live under /admin121210,
+    // the student portal lives under `/` — never cross them.
+    window.location.href = isStaffRole ? "/admin121210" : "/";
+  }, [user?.role]);
 
   const setAuth = useCallback((u: AppUser, c: AppChurch | null) => {
     setUser(u);
