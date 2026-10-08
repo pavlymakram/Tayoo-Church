@@ -51,6 +51,8 @@ export async function GET(req: Request) {
     church.name,
     students.map((s) => ({
       fullName: s.fullName,
+      username: s.username,
+      initialPassword: s.initialPassword,
       birthDate: s.birthDate,
       grade: s.grade,
       phone: s.phone,

@@ -10,6 +10,8 @@ export type ExportPerson = {
   id: string;
   fullName: string;
   username: string | null;
+  /** Auto-generated initial password/PIN for easy distribution. */
+  initialPassword: string | null;
   role: string;
   roleLabel: string;
   className: string | null;
@@ -137,6 +139,7 @@ export async function buildExportPayload(churchId: string, scope: AccessScope): 
     id: member.id,
     fullName: member.fullName,
     username: member.username,
+    initialPassword: member.initialPassword,
     role: normalizeRole(member.role),
     roleLabel: roleLabel(member.role),
     className: member.classId ? classById.get(member.classId)?.name ?? null : null,

@@ -15,6 +15,7 @@ export const PERSON_HEADERS = [
   "الفصل / الصف",
   "الاسم الرباعي",
   "اسم المستخدم",
+  "الرقم السري",
   "الدور",
   "المرحلة",
   "رقم الموبايل",
@@ -31,7 +32,7 @@ export const PERSON_HEADERS = [
   "عدد الحضور",
 ] as const;
 
-const COLUMN_WIDTHS = [16, 30, 26, 14, 14, 15, 15, 28, 7, 16, 14, 14, 12, 34, 10, 34, 10];
+const COLUMN_WIDTHS = [16, 30, 26, 14, 14, 14, 15, 15, 28, 7, 16, 14, 14, 12, 34, 10, 34, 10];
 
 function stylesheet(sheet: ExcelJS.Worksheet, columns: number) {
   sheet.views = [{ ...SHEET_VIEW, state: "frozen", xSplit: 0, ySplit: 0 }];
@@ -80,6 +81,7 @@ function personRow(member: ExportPerson, phaseName: string) {
     member.className ?? "بدون فصل",
     member.fullName,
     member.username ?? "",
+    member.initialPassword ?? "",
     member.roleLabel,
     phaseName,
     member.phone,
@@ -133,8 +135,8 @@ function writeSectionBlock(sheet: ExcelJS.Worksheet, section: ExportSection) {
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: SOFT } };
         });
       }
-      row.getCell(13).font = { bold: true, color: { argb: GOLD } };
-      row.getCell(13).alignment = { horizontal: "center" };
+      row.getCell(14).font = { bold: true, color: { argb: GOLD } };
+      row.getCell(14).alignment = { horizontal: "center" };
     });
 
     if (group.members.length === 0) {
@@ -343,6 +345,8 @@ export async function buildScopeWorkbook(payload: ExportPayload) {
 
 export type ExportStudentRow = {
   fullName: string;
+  username?: string | null;
+  initialPassword?: string | null;
   birthDate: Date | null;
   grade: string | null;
   phone: string;
@@ -363,6 +367,8 @@ export async function buildVisitationWorkbook(churchName: string, rows: ExportSt
   const sheet = wb.addWorksheet("شيت الافتقاد", { views: [{ rightToLeft: true }] });
   sheet.columns = [
     { header: "الاسم الرباعي", key: "fullName", width: 32 },
+    { header: "اسم المستخدم", key: "username", width: 26 },
+    { header: "الرقم السري", key: "initialPassword", width: 14 },
     { header: "السن", key: "age", width: 8 },
     { header: "المرحلة الدراسية", key: "grade", width: 16 },
     { header: "رقم الموبايل", key: "phone", width: 16 },
@@ -383,6 +389,8 @@ export async function buildVisitationWorkbook(churchName: string, rows: ExportSt
   rows.forEach((r, i) => {
     const row = sheet.addRow({
       fullName: r.fullName,
+      username: r.username ?? "",
+      initialPassword: r.initialPassword ?? "",
       age: calcAge(r.birthDate) ?? "",
       grade: r.grade ?? "",
       phone: r.phone,

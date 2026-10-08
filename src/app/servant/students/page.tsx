@@ -1,8 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, History, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import {
+  Download,
+  FileDown,
+  FileUp,
+  History,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { Button, Input, Select } from "@/components/ui/form";
@@ -23,6 +33,14 @@ type UserRow = ManageableUser & {
 };
 
 type IssuedCredentials = { fullName: string; username: string; password: string };
+
+type ImportedCredentials = {
+  fullName: string;
+  username: string;
+  password: string;
+  phaseName: string;
+  className: string | null;
+};
 
 type UsersResponse = {
   users: UserRow[];
@@ -57,6 +75,16 @@ export default function StudentsPage() {
 
   const canCreate = can("createStudents");
   const canManage = can("manageStudents");
+  // Excel import is exclusive to Sector/Church Admins (CHURCH_ADMIN/SUPER_ADMIN).
+  const isChurchAdmin =
+    user?.role === "CHURCH_ADMIN" || user?.role === "SUPER_ADMIN";
+
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    created: ImportedCredentials[];
+    skipped: { row: number; reason: string }[];
+  } | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (loading) return;
@@ -213,6 +241,146 @@ export default function StudentsPage() {
       setExporting(false);
     }
   }
+
+  /** Downloads an empty Excel template with the exact expected columns. */
+  async function downloadImportTemplate() {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+    const headers = [
+      "الاسم الرباعي",
+      "رقم التليفون",
+      "رقم تليفون إضافي / ولي الأمر",
+      "العنوان",
+      "المرحلة",
+      "الفصل",
+      "تاريخ الميلاد",
+      "وظيفة الأب",
+      "وظيفة الأم",
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([
+      headers,
+      ["مينا جورج فوزي حنا", "01555555551", "01255555551", "شبرا — شارع الترعة", "1 إعدادي", "فصل أ", "2012-05-10", "مهندس", "مدرسة"],
+    ]);
+    ws["!cols"] = headers.map(() => ({ wch: 24 }));
+    XLSX.utils.book_append_sheet(wb, ws, "الطلاب");
+    XLSX.writeFile(wb, "قالب-استيراد-الطلاب.xlsx");
+  }
+
+  function cellToString(value: unknown): string {
+    if (value == null) return "";
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value.toISOString().slice(0, 10);
+    }
+    if (typeof value === "number") {
+      // Excel may store phone numbers / dates as numbers.
+      if (Number.isInteger(value)) return String(value);
+      const asDate = XLSXSerialToDate(value);
+      if (asDate) return asDate;
+      return String(value);
+    }
+    return String(value).trim();
+  }
+
+  function XLSXSerialToDate(serial: number): string | null {
+    // Excel serial dates are days since 1899-12-30; phone numbers are far larger.
+    if (serial < 20000 || serial > 60000) return null;
+    const base = Date.UTC(1899, 11, 30);
+    const d = new Date(base + serial * 86400000);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString().slice(0, 10);
+  }
+
+  async function handleImportFile(file: File) {
+    setImporting(true);
+    try {
+      const XLSX = await import("xlsx");
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array", cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      if (!sheet) throw new Error("ملف Excel فارغ");
+      const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true });
+      if (aoa.length < 2) throw new Error("لا توجد صفوف في الملف");
+
+      const norm = (v: unknown) =>
+        String(v ?? "")
+          .trim()
+          .replace(/\s+/g, " ");
+      const headers = (aoa[0] as unknown[]).map(norm);
+      const col = (...names: string[]) => {
+        for (const n of names) {
+          const i = headers.indexOf(n);
+          if (i >= 0) return i;
+        }
+        return -1;
+      };
+      // Positional fallback keeps spreadsheets usable even with renamed headers.
+      const cName = col("الاسم الرباعي", "الاسم", "name");
+      const cPhone = col("رقم التليفون", "التليفون", "الموبايل", "الهاتف", "phone");
+      const cParent = col("رقم تليفون إضافي / ولي الأمر", "رقم ولي الأمر", "ولي الأمر", "تليفون إضافي");
+      const cAddress = col("العنوان", "address");
+      const cStage = col("المرحلة", "الصف", "stage", "phase");
+      const cClass = col("الفصل", "class");
+      const cBirth = col("تاريخ الميلاد", "الميلاد", "birth");
+      const cFatherJob = col("وظيفة الأب", "مهنة الأب");
+      const cMotherJob = col("وظيفة الأم", "مهنة الأم");
+
+      const at = (row: unknown[], i: number, fallback: number) =>
+        cellToString(i >= 0 ? row[i] : row[fallback]);
+
+      const rows = (aoa.slice(1) as unknown[][])
+        .map((row) => ({
+          fullName: at(row, cName, 0),
+          phone: at(row, cPhone, 1),
+          secondaryPhone: at(row, cParent, 2),
+          address: at(row, cAddress, 3),
+          stage: at(row, cStage, 4),
+          className: at(row, cClass, 5),
+          birthDate: at(row, cBirth, 6),
+          fatherJob: at(row, cFatherJob, 7),
+          motherJob: at(row, cMotherJob, 8),
+        }))
+        .filter((r) => r.fullName || r.phone);
+
+      if (rows.length === 0) throw new Error("لا توجد صفوف صالحة في الملف");
+
+      const res = await fetch("/api/students/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "فشل الاستيراد");
+
+      setImportResult({ created: data.created ?? [], skipped: data.skipped ?? [] });
+      toast.success(`تم استيراد ${data.summary?.created ?? 0} طالب بنجاح`);
+      invalidateCache("/api/users");
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "فشل الاستيراد");
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  /** Exports the freshly generated usernames + PINs for easy distribution. */
+  async function downloadImportedCredentials() {
+    if (!importResult || importResult.created.length === 0) return;
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(
+      importResult.created.map((c) => ({
+        "الاسم الرباعي": c.fullName,
+        "اسم المستخدم": c.username,
+        "الرقم السري": c.password,
+        المرحلة: c.phaseName,
+        الفصل: c.className ?? "",
+      }))
+    );
+    ws["!cols"] = [{ wch: 30 }, { wch: 26 }, { wch: 14 }, { wch: 16 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws, "بيانات الدخول");
+    XLSX.writeFile(wb, "بيانات-دخول-الطلاب.xlsx");
+  }
 return (
     <>
       <PageShell withStaffNav>
@@ -227,6 +395,29 @@ return (
             <Button type="button" variant="gold" onClick={() => void exportReport()} disabled={exporting} className="w-full sm:w-auto">
               <Download className="h-4 w-4" /> {exporting ? "جارٍ التصدير..." : "تصدير Excel"}
             </Button>
+            {isChurchAdmin && (
+              <>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleImportFile(f);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={importing}
+                  className="w-full sm:w-auto"
+                >
+                  <FileUp className="h-4 w-4" /> {importing ? "جارٍ الاستيراد..." : "استيراد من Excel"}
+                </Button>
+              </>
+            )}
             {canCreate && (
               <Button
                 type="button"
@@ -327,6 +518,78 @@ return (
         </div>
       </PageShell>
       <StaffBottomNav />
+
+      <Modal
+        open={!!importResult}
+        onClose={() => setImportResult(null)}
+        title="نتيجة استيراد Excel"
+        className="sm:max-w-2xl"
+      >
+        {importResult && (
+          <div className="space-y-4">
+            <p className="text-sm font-bold text-slate-700">
+              تم إنشاء {importResult.created.length} حساب — وزّع أسماء المستخدمين والأرقام السرية على
+              المخدومين.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="gold"
+                disabled={importResult.created.length === 0}
+                onClick={() => void downloadImportedCredentials()}
+              >
+                <FileDown className="h-4 w-4" /> تنزيل بيانات الدخول (Excel)
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => void downloadImportTemplate()}>
+                <FileDown className="h-4 w-4" /> تنزيل القالب
+              </Button>
+            </div>
+            {importResult.created.length > 0 && (
+              <div className="max-h-64 overflow-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-right text-xs">
+                  <thead className="sticky top-0 bg-slate-100">
+                    <tr>
+                      <th className="p-2">الاسم</th>
+                      <th className="p-2">اسم المستخدم</th>
+                      <th className="p-2">الرقم السري</th>
+                      <th className="p-2">المرحلة</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importResult.created.map((c) => (
+                      <tr key={c.username} className="border-t border-slate-100">
+                        <td className="p-2 font-bold">{c.fullName}</td>
+                        <td className="p-2 font-mono" dir="ltr">
+                          {c.username}
+                        </td>
+                        <td className="p-2 font-mono font-black" dir="ltr">
+                          {c.password}
+                        </td>
+                        <td className="p-2">{c.phaseName}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {importResult.skipped.length > 0 && (
+              <div className="rounded-2xl bg-rose-50 p-3 text-xs leading-relaxed text-rose-700">
+                <p className="mb-1 font-black">صفوف متخطاة ({importResult.skipped.length}):</p>
+                <ul className="max-h-32 list-disc space-y-1 overflow-auto pr-4">
+                  {importResult.skipped.map((s, i) => (
+                    <li key={i}>
+                      صف {s.row}: {s.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <Button type="button" className="w-full" onClick={() => setImportResult(null)}>
+              تم — إغلاق
+            </Button>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={showForm}

@@ -26,8 +26,18 @@ export async function POST(req: Request) {
   const qrCodeId = typeof body?.qrCodeId === "string" ? body.qrCodeId.trim() : "";
   if (!kind || !qrCodeId) return jsonError("بيانات المسح غير صالحة");
 
+  // Offline-safe: synced scans carry their original local scan moment, and the
+  // Liturgy cutoff binds to THAT moment — never to the later sync time.
+  let effectiveTime = new Date();
+  if (typeof body?.scannedAt === "string") {
+    const parsed = new Date(body.scannedAt);
+    if (!Number.isNaN(parsed.getTime()) && parsed.getTime() <= Date.now() + 5 * 60 * 1000) {
+      effectiveTime = parsed;
+    }
+  }
+
   // Strict Liturgy window: registration closes at 08:00 Cairo time (EEST).
-  if (kind === "mass" && !isLiturgyScanOpen(new Date())) {
+  if (kind === "mass" && !isLiturgyScanOpen(effectiveTime)) {
     return jsonError(LITURGY_CUTOFF_MESSAGE, 403);
   }
 
@@ -62,6 +72,8 @@ export async function POST(req: Request) {
       eventTypeId: event.id,
       pointsAmount: points,
       note: kind === "mass" ? "مسح القداس" : "مسح الحضور",
+      // Offline-synced scans preserve their original local scan moment.
+      createdAt: effectiveTime,
     },
   });
 
