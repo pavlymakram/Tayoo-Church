@@ -75,9 +75,8 @@ export default function StudentsPage() {
 
   const canCreate = can("createStudents");
   const canManage = can("manageStudents");
-  // Excel import is exclusive to Sector/Church Admins (CHURCH_ADMIN/SUPER_ADMIN).
-  const isChurchAdmin =
-    user?.role === "CHURCH_ADMIN" || user?.role === "SUPER_ADMIN";
+  // Excel import is exclusive to Phase Admins (PHASE_ADMIN / أدمن القطاع).
+  const isPhaseAdmin = user?.role === "PHASE_ADMIN";
 
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{
@@ -395,7 +394,7 @@ return (
             <Button type="button" variant="gold" onClick={() => void exportReport()} disabled={exporting} className="w-full sm:w-auto">
               <Download className="h-4 w-4" /> {exporting ? "جارٍ التصدير..." : "تصدير Excel"}
             </Button>
-            {isChurchAdmin && (
+            {isPhaseAdmin && (
               <>
                 <input
                   ref={fileRef}

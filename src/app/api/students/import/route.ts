@@ -3,6 +3,7 @@ import { jsonError, jsonOk, readJson } from "@/lib/api";
 import { hashPassword, requireSession } from "@/lib/auth";
 import { allocateUsername, buildUsername, randomDigits } from "@/lib/credentials";
 import { phaseDefinitionForGrade } from "@/lib/phases";
+import { isPhaseInScope, resolveScope } from "@/lib/scope";
 
 const MAX_ROWS = 500;
 
@@ -25,8 +26,7 @@ function str(value: unknown): string {
 }
 
 /**
- * Bulk Excel student import — SECTOR/CHURCH ADMINS ONLY
- * (CHURCH_ADMIN / SUPER_ADMIN).
+ * Bulk Excel student import — PHASE ADMINS (أدمن القطاع) ONLY.
  *
  * The client parses the .xlsx/.xls workbook and posts normalized rows:
  * fullName / phone / secondaryPhone / address / stage / className /
@@ -34,24 +34,27 @@ function str(value: unknown): string {
  *
  * Each created student gets a unique username ({church}_user_XXXXX) plus a
  * 4-digit PIN (login + distributable initial password), and is assigned to
- * the matching Stage (Phase) and Class relations.
+ * the matching Stage (Phase) and Class relations — strictly inside the
+ * importer's assigned sector. All other roles
+ * (SUPER_ADMIN / CHURCH_ADMIN / PHASE_SERVANT / STUDENT) are rejected.
  */
 export async function POST(req: Request) {
-  const { session, error } = await requireSession(["SUPER_ADMIN", "CHURCH_ADMIN"]);
+  const { session, error } = await requireSession(["PHASE_ADMIN"]);
   if (error || !session) return error!;
+  if (!session.churchId) return jsonError("لا توجد كنيسة مرتبطة", 400);
+
+  const churchId = session.churchId;
+
+  // PHASE_ADMIN imports are confined to their assigned sector scope.
+  const scope = await resolveScope(session);
+  if (scope.role !== "PHASE_ADMIN" || scope.unassigned || scope.phaseIds.length === 0) {
+    return jsonError("الاستيراد متاح لأدمن القطاع المعيَّن على قطاع فقط", 403);
+  }
 
   const body = await readJson(req);
   const rows = Array.isArray(body?.rows) ? (body.rows as ImportRow[]) : null;
   if (!rows || rows.length === 0) return jsonError("لا توجد صفوف للاستيراد");
   if (rows.length > MAX_ROWS) return jsonError(`الحد الأقصى ${MAX_ROWS} طالب في المرة الواحدة`);
-
-  let churchId = session.churchId;
-  if (session.role === "SUPER_ADMIN") {
-    const requested = typeof body?.churchId === "string" ? body.churchId.trim() : "";
-    if (!requested) return jsonError("اختر الكنيسة أولاً");
-    churchId = requested;
-  }
-  if (!churchId) return jsonError("لا توجد كنيسة مرتبطة", 400);
 
   const church = await prisma.church.findUnique({
     where: { id: churchId },
@@ -60,7 +63,7 @@ export async function POST(req: Request) {
   if (!church) return jsonError("الكنيسة غير موجودة", 404);
 
   const phases = await prisma.phase.findMany({
-    where: { churchId },
+    where: { churchId, id: { in: scope.phaseIds } },
     select: { id: true, name: true, abbreviation: true },
   });
   const classes = await prisma.class.findMany({
@@ -118,6 +121,11 @@ export async function POST(req: Request) {
     }
     if (!phase) {
       skipped.push({ row: rowNo, reason: `المرحلة غير موجودة: ${stageRaw || "—"}` });
+      continue;
+    }
+    // Sector confinement: reject any stage outside the admin's assigned sector.
+    if (!isPhaseInScope(scope, phase.id)) {
+      skipped.push({ row: rowNo, reason: `المرحلة خارج قطاعك: ${phase.name}` });
       continue;
     }
 
