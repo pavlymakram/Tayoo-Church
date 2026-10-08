@@ -7,6 +7,7 @@ import { CalendarCheck2, Church, Download, Hourglass } from "lucide-react";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { Button, Input, Select } from "@/components/ui/form";
 import { useAuth } from "@/components/providers/auth-provider";
+import { fetchJsonWithCache } from "@/lib/offline-db";
 
 /**
  * Attendance & reports screen.
@@ -69,19 +70,31 @@ export default function AttendancePage() {
       if (from) params.set("from", from);
       if (to) params.set("to", to);
       params.set("fridayOnly", String(fridayOnly));
-      const res = await fetch(`/api/attendance/log?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "تعذر تحميل السجل");
-      setRows(data.rows);
-      setPhases(data.phases);
-      setClasses(data.classes);
-      setSummary(data.summary);
+      // Network-First with IndexedDB fallback — the report opens offline too.
+      const { data } = await fetchJsonWithCache<{
+        rows: LogRow[];
+        phases: PhaseOption[];
+        classes: ClassOption[];
+        summary: { liturgy: number; service: number; students: number; fridays: string[] };
+      }>(`/api/attendance/log?${params.toString()}`);
+      setRows(data.rows ?? []);
+      setPhases(data.phases ?? []);
+      setClasses(data.classes ?? []);
+      setSummary(data.summary ?? null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "خطأ");
     } finally {
       setBusy(false);
     }
   }
+
+  // Refresh after the background sync flushes locally saved operations.
+  useEffect(() => {
+    const onSynced = () => void load();
+    window.addEventListener("tayoo:offline-synced", onSynced);
+    return () => window.removeEventListener("tayoo:offline-synced", onSynced);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (loading || !user || !canView) return;

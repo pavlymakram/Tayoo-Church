@@ -7,6 +7,8 @@ import { LayoutGrid, Plus, Trash2 } from "lucide-react";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { Button, Input, Select } from "@/components/ui/form";
 import { useAuth } from "@/components/providers/auth-provider";
+import { fetchJsonWithCache } from "@/lib/offline-db";
+import { apiMutate } from "@/lib/offline-mutations";
 
 /**
  * Dynamic classes (الفصول) — phase admins create and manage any number of classes per
@@ -43,21 +45,29 @@ export default function ClassesPage() {
   async function load(nextPhase = phaseFilter) {
     const params = new URLSearchParams();
     if (nextPhase) params.set("phaseId", nextPhase);
-    const [classesRes, phasesRes] = await Promise.all([
-      fetch(`/api/classes?${params.toString()}`),
-      fetch("/api/phases"),
-    ]);
-    if (!classesRes.ok) {
-      toast.error("تعذر تحميل الفصول");
-      return;
-    }
-    const data = await classesRes.json();
-    setRows(data.classes);
-    if (phasesRes.ok) {
-      const phaseData = await phasesRes.json();
-      setPhases(phaseData.phases);
+    try {
+      // Network-First with IndexedDB fallback — the list opens offline too.
+      const [{ data: classData }, { data: phaseData }] = await Promise.all([
+        fetchJsonWithCache<{ classes: ClassRow[] }>(`/api/classes?${params.toString()}`),
+        fetchJsonWithCache<{ phases: PhaseOption[] }>("/api/phases").catch(() => ({
+          data: { phases: null as unknown as PhaseOption[] },
+          fromCache: false,
+        })),
+      ]);
+      setRows(classData.classes ?? []);
+      if (phaseData.phases) setPhases(phaseData.phases);
+    } catch {
+      toast.error("تعذر تحميل الفصول — لا يوجد اتصال ولا نسخة محفوظة");
     }
   }
+
+  // Refresh after the background sync flushes locally saved operations.
+  useEffect(() => {
+    const onSynced = () => void load();
+    window.addEventListener("tayoo:offline-synced", onSynced);
+    return () => window.removeEventListener("tayoo:offline-synced", onSynced);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (loading || !user || !canManage) return;
@@ -69,15 +79,12 @@ export default function ClassesPage() {
     e.preventDefault();
     setBusy(true);
     const fd = new FormData(e.currentTarget);
+    const phaseId = String(fd.get("phaseId") || "");
+    const name = String(fd.get("name") || "");
     try {
-      const res = await fetch("/api/classes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phaseId: String(fd.get("phaseId") || ""), name: String(fd.get("name") || "") }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "تعذر إنشاء الفصل");
-      toast.success("تم إنشاء الفصل");
+      const out = await apiMutate("/api/classes", "POST", { phaseId, name });
+      if (out.queued) toast.info("تم إنشاء الفصل محلياً — ستتم المزامنة عند عودة الاتصال");
+      else toast.success("تم إنشاء الفصل");
       e.currentTarget.reset();
       await load();
     } catch (err) {
@@ -90,30 +97,36 @@ export default function ClassesPage() {
   async function rename(item: ClassRow) {
     const name = window.prompt("اسم الفصل الجديد", item.name);
     if (!name || name.trim() === item.name) return;
-    const res = await fetch("/api/classes", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: item.id, phaseId: item.phaseId, name: name.trim() }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      toast.error(data.error || "تعذر التعديل");
-      return;
+    try {
+      const out = await apiMutate("/api/classes", "PATCH", {
+        id: item.id,
+        phaseId: item.phaseId,
+        name: name.trim(),
+      });
+      // Optimistic rename so the UI responds instantly (online or offline).
+      setRows((prev) => prev.map((r) => (r.id === item.id ? { ...r, name: name.trim() } : r)));
+      if (out.queued) toast.info("تم الحفظ محلياً — ستتم المزامنة عند عودة الاتصال");
+      else toast.success("تم تحديث الفصل");
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "تعذر التعديل");
     }
-    toast.success("تم تحديث الفصل");
-    await load();
   }
 
   async function remove(item: ClassRow) {
     if (!window.confirm(`حذف الفصل «${item.name}» من مرحلة ${item.phaseName}؟`)) return;
-    const res = await fetch(`/api/classes?id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) {
-      toast.error(data.error || "تعذر الحذف");
-      return;
+    try {
+      const out = await apiMutate(
+        `/api/classes?id=${encodeURIComponent(item.id)}`,
+        "DELETE"
+      );
+      setRows((prev) => prev.filter((r) => r.id !== item.id));
+      if (out.queued) toast.info("تم حذف الفصل محلياً — ستتم المزامنة عند عودة الاتصال");
+      else toast.success("تم حذف الفصل");
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "تعذر الحذف");
     }
-    toast.success("تم حذف الفصل");
-    await load();
   }
 
   return (

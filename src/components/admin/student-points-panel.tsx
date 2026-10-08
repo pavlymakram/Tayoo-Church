@@ -5,6 +5,8 @@ import { Pencil, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Input, Select, TextArea } from "@/components/ui/form";
 import { Modal } from "@/components/ui/modal";
+import { fetchJsonWithCache } from "@/lib/offline-db";
+import { apiMutate } from "@/lib/offline-mutations";
 
 export type TxRow = {
   id: string;
@@ -46,17 +48,17 @@ export function StudentPointsPanel({
   async function load() {
     setLoading(true);
     try {
-      const [txRes, evRes] = await Promise.all([
-        fetch(`/api/points?studentId=${encodeURIComponent(studentId)}`),
-        fetch("/api/events"),
+      // Network-First with IndexedDB fallback — the wallet opens offline too.
+      const [txHit, evHit] = await Promise.all([
+        fetchJsonWithCache<{ transactions: TxRow[]; totalPoints?: number }>(
+          `/api/points?studentId=${encodeURIComponent(studentId)}`
+        ),
+        fetchJsonWithCache<{ events: EventType[] }>("/api/events"),
       ]);
-      const txData = await txRes.json();
-      const evData = await evRes.json();
-      if (!txRes.ok) throw new Error(txData.error || "تعذر تحميل الحركات");
-      setTransactions(txData.transactions);
-      setTotalPoints(txData.totalPoints ?? 0);
-      onBalanceChange?.(txData.totalPoints ?? 0);
-      if (evRes.ok) setEvents(evData.events || []);
+      setTransactions(txHit.data.transactions ?? []);
+      setTotalPoints(txHit.data.totalPoints ?? 0);
+      onBalanceChange?.(txHit.data.totalPoints ?? 0);
+      setEvents(evHit.data.events || []);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "خطأ");
     } finally {
@@ -69,17 +71,31 @@ export function StudentPointsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId]);
 
+  // Refresh after the background sync flushes locally saved operations.
+  useEffect(() => {
+    const onSynced = () => void load();
+    window.addEventListener("tayoo:offline-synced", onSynced);
+    return () => window.removeEventListener("tayoo:offline-synced", onSynced);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function deleteTx(id: string) {
     if (!canManage) return;
     if (!window.confirm("هل تريد حذف هذه الحركة وإلغاء النقط المرتبطة بها؟")) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/points?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "فشل الحذف");
-      toast.success("تم حذف الحركة");
-      setTotalPoints(data.studentTotalPoints);
-      onBalanceChange?.(data.studentTotalPoints);
+      const out = await apiMutate<{ studentTotalPoints?: number }>(
+        `/api/points?id=${encodeURIComponent(id)}`,
+        "DELETE"
+      );
+      setTransactions((prev) => prev.filter((t) => t.id !== id));
+      if (out.queued) {
+        toast.info("تم حذف الحركة محلياً — ستتم المزامنة عند عودة الاتصال");
+      } else {
+        toast.success("تم حذف الحركة");
+        setTotalPoints(out.data?.studentTotalPoints ?? totalPoints);
+        onBalanceChange?.(out.data?.studentTotalPoints ?? totalPoints);
+      }
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "خطأ");
@@ -92,22 +108,27 @@ export function StudentPointsPanel({
     if (!editTx || !canManage) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/points", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editTx.id,
-          pointsAmount: editPoints,
-          note: editNote || null,
-          eventTypeId: editEventId || undefined,
-        }),
+      const out = await apiMutate<{ studentTotalPoints?: number }>("/api/points", "PATCH", {
+        id: editTx.id,
+        pointsAmount: editPoints,
+        note: editNote || null,
+        eventTypeId: editEventId || undefined,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "فشل التعديل");
-      toast.success("تم تعديل الحركة");
+      if (out.queued) {
+        toast.info("تم حفظ التعديل محلياً — ستتم المزامنة عند عودة الاتصال");
+        setTransactions((prev) =>
+          prev.map((t) =>
+            t.id === editTx.id
+              ? { ...t, pointsAmount: editPoints, note: editNote || null }
+              : t
+          )
+        );
+      } else {
+        toast.success("تم تعديل الحركة");
+        setTotalPoints(out.data?.studentTotalPoints ?? totalPoints);
+        onBalanceChange?.(out.data?.studentTotalPoints ?? totalPoints);
+      }
       setEditTx(null);
-      setTotalPoints(data.studentTotalPoints);
-      onBalanceChange?.(data.studentTotalPoints);
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "خطأ");
@@ -120,23 +141,21 @@ export function StudentPointsPanel({
     if (!canManage) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/points/adjust", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId,
-          mode: adjustMode,
-          value: adjustValue,
-          note: adjustNote || null,
-        }),
+      const out = await apiMutate<{ studentTotalPoints?: number }>("/api/points/adjust", "POST", {
+        studentId,
+        mode: adjustMode,
+        value: adjustValue,
+        note: adjustNote || null,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "فشل التعديل");
-      toast.success(`الرصيد الجديد: ${data.studentTotalPoints} طايو`);
+      if (out.queued) {
+        toast.info("تم حفظ التعديل محلياً — ستتم المزامنة عند عودة الاتصال");
+      } else {
+        toast.success(`الرصيد الجديد: ${out.data?.studentTotalPoints ?? "?"} طايو`);
+        setTotalPoints(out.data?.studentTotalPoints ?? totalPoints);
+        onBalanceChange?.(out.data?.studentTotalPoints ?? totalPoints);
+      }
       setShowAdjust(false);
       setAdjustNote("");
-      setTotalPoints(data.studentTotalPoints);
-      onBalanceChange?.(data.studentTotalPoints);
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "خطأ");

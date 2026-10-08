@@ -8,6 +8,8 @@ import { QrScanner } from "@/components/scanner/qr-scanner";
 import { Button, Input, Select, TextArea } from "@/components/ui/form";
 import { Modal } from "@/components/ui/modal";
 import { useAuth } from "@/components/providers/auth-provider";
+import { fetchJsonWithCache } from "@/lib/offline-db";
+import { apiMutate } from "@/lib/offline-mutations";
 
 type Student = {
   id: string;
@@ -48,14 +50,17 @@ export default function ScanPage() {
       return;
     }
     void (async () => {
-      const res = await fetch("/api/events");
-      if (!res.ok) return;
-      const data = await res.json();
-      const active = (data.events as EventType[]).filter((e) => e.isActive);
-      setEvents(active);
-      if (active[0]) {
-        setEventTypeId(active[0].id);
-        setPoints(active[0].defaultPoints || 5);
+      try {
+        // Network-First with IndexedDB fallback — the events list opens offline.
+        const { data } = await fetchJsonWithCache<{ events: EventType[] }>("/api/events");
+        const active = (data.events ?? []).filter((e) => e.isActive);
+        setEvents(active);
+        if (active[0]) {
+          setEventTypeId(active[0].id);
+          setPoints(active[0].defaultPoints || 5);
+        }
+      } catch {
+        /* offline with no saved copy yet */
       }
     })();
   }, [user, loading, router, can]);
@@ -72,41 +77,51 @@ export default function ScanPage() {
       setResults([]);
       return;
     }
-    const res = await fetch(`/api/students?q=${encodeURIComponent(q.trim())}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    setResults(data.students);
+    try {
+      const { data } = await fetchJsonWithCache<{ students: Student[] }>(
+        `/api/students?q=${encodeURIComponent(q.trim())}`
+      );
+      setResults(data.students ?? []);
+    } catch {
+      /* offline — keep the last results */
+    }
   }
 
   async function loadByQr(qr: string) {
-    const res = await fetch(`/api/students?qr=${encodeURIComponent(qr)}`);
-    const data = await res.json();
-    if (!res.ok) {
-      toast.error(data.error || "لم يتم التعرف على الـ QR");
-      return;
+    try {
+      const { data } = await fetchJsonWithCache<{ student: Student; error?: string }>(
+        `/api/students?qr=${encodeURIComponent(qr)}`
+      );
+      setSelected(data.student);
+    } catch (err) {
+      const status = (err as { status?: number })?.status;
+      toast.error(
+        status && status !== 0
+          ? (err as Error).message || "لم يتم التعرف على الـ QR"
+          : "لا يوجد اتصال بالإنترنت — لا يمكن التحقق من الـ QR"
+      );
     }
-    setSelected(data.student);
   }
 
   async function submitPoints() {
     if (!selected || !eventTypeId) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/points", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId: selected.id,
-          eventTypeId,
-          pointsAmount: points,
-          note: note || null,
-        }),
+      const out = await apiMutate("/api/points", "POST", {
+        studentId: selected.id,
+        eventTypeId,
+        pointsAmount: points,
+        note: note || null,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "فشل الحفظ");
-      toast.success(
-        `تم ${points >= 0 ? "إضافة" : "خصم"} ${Math.abs(points)} طايو لـ ${selected.fullName}`
-      );
+      if (out.queued) {
+        toast.info(
+          `تم حفظ ${points >= 0 ? "إضافة" : "خصم"} ${Math.abs(points)} طايو لـ ${selected.fullName} محلياً — ستتم المزامنة عند عودة الاتصال`
+        );
+      } else {
+        toast.success(
+          `تم ${points >= 0 ? "إضافة" : "خصم"} ${Math.abs(points)} طايو لـ ${selected.fullName}`
+        );
+      }
       setSelected(null);
       setNote("");
       setQuery("");

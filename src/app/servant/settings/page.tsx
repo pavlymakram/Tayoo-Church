@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { Button, Input } from "@/components/ui/form";
 import { useAuth } from "@/components/providers/auth-provider";
+import { fetchJsonWithCache } from "@/lib/offline-db";
+import { apiMutate } from "@/lib/offline-mutations";
 
 type PhaseOption = { id: string; name: string; abbreviation: string; sector: string };
 
@@ -21,27 +23,33 @@ export default function SettingsPage() {
   const canSettings = can("manageChurchSettings");
 
   async function load() {
-    const [settingsRes, phasesRes] = await Promise.all([fetch("/api/church/settings"), fetch("/api/phases")]);
-    if (settingsRes.ok) {
-      const settings = (await settingsRes.json()).settings;
+    try {
+      // Network-First with IndexedDB fallback — settings open offline too.
+      const [settingsHit, phasesHit] = await Promise.all([
+        fetchJsonWithCache<{ settings: { defaultMassPoints: number; defaultServicePoints: number } }>(
+          "/api/church/settings"
+        ),
+        fetchJsonWithCache<{ phases: PhaseOption[] }>("/api/phases"),
+      ]);
+      const settings = settingsHit.data.settings;
       setMassPoints(settings.defaultMassPoints);
       setServicePoints(settings.defaultServicePoints);
+      setPhases(phasesHit.data.phases ?? []);
+    } catch {
+      /* offline with no saved copy yet — keep current values */
     }
-    if (phasesRes.ok) setPhases((await phasesRes.json()).phases);
   }
 
   async function saveDefaults(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch("/api/church/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ defaultMassPoints: massPoints, defaultServicePoints: servicePoints }),
+      const out = await apiMutate("/api/church/settings", "PATCH", {
+        defaultMassPoints: massPoints,
+        defaultServicePoints: servicePoints,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "تعذر حفظ الإعدادات");
-      toast.success("تم حفظ النقاط الافتراضية");
+      if (out.queued) toast.info("تم حفظ الإعدادات محلياً — ستتم المزامنة عند عودة الاتصال");
+      else toast.success("تم حفظ النقاط الافتراضية");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "خطأ");
     } finally {

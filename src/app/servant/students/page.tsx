@@ -22,6 +22,7 @@ import { StudentPointsPanel } from "@/components/admin/student-points-panel";
 import { useAuth } from "@/components/providers/auth-provider";
 import { GRADES } from "@/lib/utils";
 import { cachedFetch, invalidateCache, primeCache } from "@/lib/cache";
+import { apiMutate } from "@/lib/offline-mutations";
 
 type UserRow = ManageableUser & {
   id: string;
@@ -151,6 +152,14 @@ export default function StudentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, grade, phaseId, classId]);
 
+  // Refresh after the background sync flushes locally saved operations.
+  useEffect(() => {
+    const onSynced = () => void load();
+    window.addEventListener("tayoo:offline-synced", onSynced);
+    return () => window.removeEventListener("tayoo:offline-synced", onSynced);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const stats = useMemo(() => {
     const totalPoints = users.reduce((a, s) => a + (s.totalPoints || 0), 0);
     return { total: users.length, totalPoints };
@@ -173,21 +182,27 @@ export default function StudentsPage() {
       setUsers((prev) => prev.map((row) => (row.id === editing.id ? { ...row, ...optimisticRow } : row)));
     }
     try {
-      const res = await fetch("/api/users", {
-        method: editing ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "تعذر الحفظ");
-      if (data.username && data.initialPassword) {
-        setIssued({
-          fullName: String(payload.fullName || ""),
-          username: String(data.username),
-          password: String(data.initialPassword),
-        });
+      const out = await apiMutate<{
+        username?: string;
+        initialPassword?: string;
+      }>("/api/users", editing ? "PATCH" : "POST", payload);
+      if (out.queued) {
+        toast.info(
+          editing
+            ? "تم حفظ التعديلات محلياً — ستتم المزامنة عند عودة الاتصال"
+            : "تم حفظ المخدوم محلياً — ستتم المزامنة وتوليد بيانات الدخول عند عودة الاتصال"
+        );
+      } else {
+        const data = out.data;
+        if (data?.username && data.initialPassword) {
+          setIssued({
+            fullName: String(payload.fullName || ""),
+            username: String(data.username),
+            password: String(data.initialPassword),
+          });
+        }
+        toast.success(editing ? "تم تحديث بيانات المخدوم" : "تمت إضافة المخدوم");
       }
-      toast.success(editing ? "تم تحديث بيانات المخدوم" : "تمت إضافة المخدوم");
       setShowForm(false);
       setEditing(null);
       invalidateCache("/api/users");
@@ -206,10 +221,12 @@ export default function StudentsPage() {
     const snapshot = users;
     setUsers((prev) => prev.filter((row) => row.id !== deleteTarget.id));
     try {
-      const res = await fetch(`/api/users?id=${encodeURIComponent(deleteTarget.id)}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "تعذر الحذف");
-      toast.success("تم حذف المخدوم");
+      const out = await apiMutate(
+        `/api/users?id=${encodeURIComponent(deleteTarget.id)}`,
+        "DELETE"
+      );
+      if (out.queued) toast.info("تم حذف المخدوم محلياً — ستتم المزامنة عند عودة الاتصال");
+      else toast.success("تم حذف المخدوم");
       setDeleteTarget(null);
       invalidateCache("/api/users");
       await load();

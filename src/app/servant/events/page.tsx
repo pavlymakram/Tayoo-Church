@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { Button, Input } from "@/components/ui/form";
 import { useAuth } from "@/components/providers/auth-provider";
+import { fetchJsonWithCache } from "@/lib/offline-db";
+import { apiMutate } from "@/lib/offline-mutations";
 
 type EventType = {
   id: string;
@@ -21,11 +23,22 @@ export default function EventsPage() {
   const [saving, setSaving] = useState(false);
 
   async function load() {
-    const res = await fetch("/api/events");
-    if (!res.ok) return;
-    const data = await res.json();
-    setEvents(data.events);
+    try {
+      // Network-First with IndexedDB fallback — the list opens offline too.
+      const { data } = await fetchJsonWithCache<{ events: EventType[] }>("/api/events");
+      setEvents(data.events ?? []);
+    } catch {
+      /* offline with no saved copy yet — keep the current list */
+    }
   }
+
+  // Refresh after the background sync flushes locally saved operations.
+  useEffect(() => {
+    const onSynced = () => void load();
+    window.addEventListener("tayoo:offline-synced", onSynced);
+    return () => window.removeEventListener("tayoo:offline-synced", onSynced);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -40,19 +53,24 @@ export default function EventsPage() {
     e.preventDefault();
     setSaving(true);
     const fd = new FormData(e.currentTarget);
+    const title = String(fd.get("title") || "");
+    const defaultPoints = Number(fd.get("defaultPoints") || 0);
     try {
-      const res = await fetch("/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: String(fd.get("title") || ""),
-          defaultPoints: Number(fd.get("defaultPoints") || 0),
-          isActive: true,
-        }),
+      const out = await apiMutate<{ events?: EventType[] }>("/api/events", "POST", {
+        title,
+        defaultPoints,
+        isActive: true,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "فشل الإضافة");
-      toast.success("تمت إضافة المناسبة");
+      if (out.queued) {
+        // Offline: keep the new event visible locally; it syncs later.
+        setEvents((prev) => [
+          ...prev,
+          { id: `queued-${Date.now()}`, title, defaultPoints, isActive: true },
+        ]);
+        toast.info("تم حفظ المناسبة محلياً — ستتم المزامنة عند عودة الاتصال");
+      } else {
+        toast.success("تمت إضافة المناسبة");
+      }
       e.currentTarget.reset();
       await load();
     } catch (err) {
@@ -63,27 +81,32 @@ export default function EventsPage() {
   }
 
   async function toggleActive(ev: EventType) {
-    const res = await fetch("/api/events", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: ev.id, isActive: !ev.isActive }),
-    });
-    if (!res.ok) {
+    try {
+      const out = await apiMutate("/api/events", "PATCH", {
+        id: ev.id,
+        isActive: !ev.isActive,
+      });
+      // Optimistic toggle so the UI responds instantly (online or offline).
+      setEvents((prev) =>
+        prev.map((e) => (e.id === ev.id ? { ...e, isActive: !e.isActive } : e))
+      );
+      if (out.queued) toast.info("تم الحفظ محلياً — ستتم المزامنة عند عودة الاتصال");
+      else toast.success(ev.isActive ? "تم تعطيل المناسبة" : "تم تفعيل المناسبة");
+      await load();
+    } catch {
       toast.error("تعذر التحديث");
-      return;
     }
-    toast.success(ev.isActive ? "تم تعطيل المناسبة" : "تم تفعيل المناسبة");
-    await load();
   }
 
   async function updatePoints(id: string, defaultPoints: number) {
-    const res = await fetch("/api/events", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, defaultPoints }),
-    });
-    if (!res.ok) toast.error("تعذر الحفظ");
-    else toast.success("تم تحديث النقط الافتراضية");
+    try {
+      const out = await apiMutate("/api/events", "PATCH", { id, defaultPoints });
+      setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, defaultPoints } : e)));
+      if (out.queued) toast.info("تم الحفظ محلياً — ستتم المزامنة عند عودة الاتصال");
+      else toast.success("تم تحديث النقط الافتراضية");
+    } catch {
+      toast.error("تعذر الحفظ");
+    }
     await load();
   }
 

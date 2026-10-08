@@ -26,9 +26,14 @@ export type SyncResult = {
   pending: number;
 };
 
-const DB_NAME = "tayoo-offline";
-const DB_VERSION = 1;
-const STORE_NAME = "attendance-queue";
+import { OFFLINE_DB_NAME, OFFLINE_DB_VERSION, SCAN_STORE } from "./offline-db";
+
+// Shares the SAME database + version as offline-db.ts (v2) — opening at a
+// lower version would make the browser reject the connection (version
+// downgrade), so both files must agree on OFFLINE_DB_VERSION.
+const DB_NAME = OFFLINE_DB_NAME;
+const DB_VERSION = OFFLINE_DB_VERSION;
+const STORE_NAME = SCAN_STORE;
 const LS_KEY = "tayoo_offline_attendance_v1";
 
 function hasIndexedDb(): boolean {
@@ -160,6 +165,9 @@ export async function enqueueOfflineScan(input: {
     } catch {
       /* best effort */
     }
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("tayoo:queue-changed"));
   }
   return scan;
 }

@@ -20,6 +20,7 @@ import { PageShell, StaffBottomNav, BrandMark } from "@/components/layout/shell"
 import { useAuth } from "@/components/providers/auth-provider";
 import { roleLabel } from "@/lib/utils";
 import { sectorLabel } from "@/lib/phases";
+import { fetchJsonWithCache } from "@/lib/offline-db";
 
 type Stats = {
   totalStudents: number;
@@ -59,11 +60,17 @@ export default function ServantHomePage() {
       return;
     }
     void (async () => {
-      const res = await fetch("/api/dashboard/stats");
-      if (!res.ok) return;
-      const data = await res.json();
-      setStats(data.stats);
-      setRecent(data.recent);
+      try {
+        // Network-First with IndexedDB fallback — the dashboard opens offline.
+        const { data } = await fetchJsonWithCache<{
+          stats: Stats;
+          recent: Recent[];
+        }>("/api/dashboard/stats");
+        setStats(data.stats ?? null);
+        setRecent(data.recent ?? []);
+      } catch {
+        /* offline with no saved copy yet */
+      }
     })();
   }, [user, loading, router, role]);
 

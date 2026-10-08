@@ -10,6 +10,8 @@ import { Modal } from "@/components/ui/modal";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SECTORS, sectorLabel } from "@/lib/phases";
 import { ROLE_LABELS, roleLabel } from "@/lib/utils";
+import { fetchJsonWithCache } from "@/lib/offline-db";
+import { apiMutate } from "@/lib/offline-mutations";
 
 /**
  * Unified Servant Management table.
@@ -81,17 +83,30 @@ export default function StaffManagementPage() {
     if (nextQ.trim()) params.set("q", nextQ.trim());
     if (nextRole && nextRole !== "ALL") params.set("role", nextRole);
     if (nextPhase) params.set("phaseId", nextPhase);
-    const res = await fetch(`/api/staff?${params.toString()}`);
-    if (!res.ok) {
-      toast.error("تعذر تحميل الخدام");
-      return;
+    try {
+      // Network-First with IndexedDB fallback — the table opens offline too.
+      const { data } = await fetchJsonWithCache<{
+        staff: StaffRow[];
+        phases: PhaseOption[];
+        classes: ClassOption[];
+        me: Me;
+      }>(`/api/staff?${params.toString()}`);
+      setRows(data.staff ?? []);
+      setPhases(data.phases ?? []);
+      setClasses(data.classes ?? []);
+      setMe(data.me ?? null);
+    } catch {
+      toast.error("تعذر تحميل الخدام — لا يوجد اتصال ولا نسخة محفوظة");
     }
-    const data = await res.json();
-    setRows(data.staff);
-    setPhases(data.phases);
-    setClasses(data.classes);
-    setMe(data.me);
   }
+
+  // Refresh after the background sync flushes locally saved operations.
+  useEffect(() => {
+    const onSynced = () => void load();
+    window.addEventListener("tayoo:offline-synced", onSynced);
+    return () => window.removeEventListener("tayoo:offline-synced", onSynced);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (loading || !user || !canManage) return;
@@ -127,21 +142,29 @@ export default function StaffManagementPage() {
       regenerateCredentials: fd.get("regenerateCredentials") === "on",
     };
     try {
-      const res = await fetch("/api/staff", {
-        method: editing ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "تعذر الحفظ");
-      if (data.initialPassword) {
-        setIssued({
-          fullName: payload.fullName,
-          username: String(data.username ?? data.staff?.username ?? ""),
-          password: String(data.initialPassword),
-        });
+      const out = await apiMutate<{
+        initialPassword?: string | null;
+        username?: string | null;
+        staff?: { username?: string | null };
+      }>("/api/staff", editing ? "PATCH" : "POST", payload);
+      if (out.queued) {
+        // Offline: saved locally; credentials are generated during sync.
+        toast.info(
+          editing
+            ? "تم حفظ التعديلات محلياً — ستتم المزامنة عند عودة الاتصال"
+            : "تم حفظ الخادم محلياً — ستتم المزامنة وتوليد بيانات الدخول عند عودة الاتصال"
+        );
+      } else {
+        const data = out.data;
+        if (data?.initialPassword) {
+          setIssued({
+            fullName: payload.fullName,
+            username: String(data.username ?? data.staff?.username ?? ""),
+            password: String(data.initialPassword),
+          });
+        }
+        toast.success(editing ? "تم تحديث بيانات الخادم" : "تمت إضافة الخادم وتوليد بيانات الدخول");
       }
-      toast.success(editing ? "تم تحديث بيانات الخادم" : "تمت إضافة الخادم وتوليد بيانات الدخول");
       setFormOpen(false);
       setEditing(null);
       await load();
@@ -156,10 +179,12 @@ export default function StaffManagementPage() {
     if (!deleteTarget) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/staff?id=${encodeURIComponent(deleteTarget.id)}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "تعذر الحذف");
-      toast.success("تم حذف الخادم");
+      const out = await apiMutate(
+        `/api/staff?id=${encodeURIComponent(deleteTarget.id)}`,
+        "DELETE"
+      );
+      if (out.queued) toast.info("تم حذف الخادم محلياً — ستتم المزامنة عند عودة الاتصال");
+      else toast.success("تم حذف الخادم");
       setDeleteTarget(null);
       await load();
     } catch (err) {

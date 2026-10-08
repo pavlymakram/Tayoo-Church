@@ -1,7 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Cairo } from "next/font/google";
 import { Toaster } from "sonner";
-import { AuthProvider } from "@/components/providers/auth-provider";
+import {
+  AuthProvider,
+  OfflineBanner,
+  OfflineProvider,
+} from "@/components/providers/auth-provider";
 import { PwaRegister } from "@/components/providers/pwa-register";
 import "./globals.css";
 
@@ -41,14 +45,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ar" dir="rtl" className={cairo.variable}>
       <body className="font-sans antialiased">
         <AuthProvider>
-          {children}
-          <Toaster
-            position="top-center"
-            dir="rtl"
-            richColors
-            toastOptions={{ className: "font-sans" }}
-          />
-          <PwaRegister />
+          <OfflineProvider>
+            <OfflineBanner />
+            {children}
+            <Toaster
+              position="top-center"
+              dir="rtl"
+              richColors
+              toastOptions={{ className: "font-sans" }}
+            />
+            <PwaRegister />
+          </OfflineProvider>
         </AuthProvider>
       </body>
     </html>
