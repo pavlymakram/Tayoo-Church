@@ -21,7 +21,6 @@ import { CrossLoader } from "@/components/ui/cross-loader";
 import { UserForm, type ClassChoice, type ManageableUser, type PhaseChoice } from "@/components/admin/user-form";
 import { StudentPointsPanel } from "@/components/admin/student-points-panel";
 import { useAuth } from "@/components/providers/auth-provider";
-import { GRADES } from "@/lib/utils";
 import { cachedFetch, invalidateCache, primeCache } from "@/lib/cache";
 import { apiMutate } from "@/lib/offline-mutations";
 
@@ -63,7 +62,6 @@ export default function StudentsPage() {
   const [addresses, setAddresses] = useState<string[]>([]);
 
   const [q, setQ] = useState("");
-  const [grade, setGrade] = useState("");
   const [addressFilter, setAddressFilter] = useState("");
   const [phaseId, setPhaseId] = useState("");
   const [classId, setClassId] = useState("");
@@ -104,7 +102,6 @@ export default function StudentsPage() {
   function buildQuery() {
     const params = new URLSearchParams();
     if (q.trim()) params.set("q", q.trim());
-    if (grade) params.set("grade", grade);
     if (canFilterByAddress && addressFilter) params.set("address", addressFilter);
     if (phaseId) params.set("phaseId", phaseId);
     if (classId) params.set("classId", classId);
@@ -159,7 +156,7 @@ export default function StudentsPage() {
     const id = window.setTimeout(() => void load(), 350);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, grade, addressFilter, phaseId, classId]);
+  }, [q, addressFilter, phaseId, classId]);
 
   // Refresh after the background sync flushes locally saved operations.
   useEffect(() => {
@@ -479,16 +476,8 @@ return (
               </option>
             ))}
           </Select>
-          <Select label="المرحلة الدراسية" value={grade} onChange={(e) => setGrade(e.target.value)}>
-            <option value="">الكل</option>
-            {GRADES.map((g) => (
-              <option key={g} value={g}>
-                {g}
-              </option>
-            ))}
-          </Select>
           {canFilterByAddress && (
-            <Select label="المنطقة / العنوان" value={addressFilter} onChange={(e) => setAddressFilter(e.target.value)}>
+            <Select label="العنوان / المنطقة" value={addressFilter} onChange={(e) => setAddressFilter(e.target.value)}>
               <option value="">كل المناطق</option>
               {addresses.map((a) => (
                 <option key={a} value={a}>

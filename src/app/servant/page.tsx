@@ -45,6 +45,8 @@ export default function ServantHomePage() {
   const router = useRouter();
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<Recent[]>([]);
+  // Empty texts render only AFTER the first fetch settles — never while loading.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -71,6 +73,8 @@ export default function ServantHomePage() {
         setRecent(data.recent ?? []);
       } catch {
         /* offline with no saved copy yet */
+      } finally {
+        setLoaded(true);
       }
     })();
   }, [user, loading, router, role]);
@@ -207,6 +211,12 @@ export default function ServantHomePage() {
         <section className="mt-8">
           <h2 className="mb-3 text-lg font-black text-[var(--color-navy)]">آخر العمليات</h2>
           <div className="space-y-2">
+            {!loaded ? (
+              <div className="glass rounded-2xl">
+                <CrossLoader size="sm" label="جارٍ تحميل آخر العمليات..." className="py-6" />
+              </div>
+            ) : (
+              <>
             {recent.map((r) => (
               <div key={r.id} className="glass flex items-center justify-between rounded-2xl px-4 py-3">
                 <div>
@@ -224,6 +234,8 @@ export default function ServantHomePage() {
             ))}
             {recent.length === 0 && (
               <p className="rounded-2xl bg-white/70 p-4 text-center text-sm text-slate-500">لا توجد عمليات بعد</p>
+            )}
+              </>
             )}
           </div>
         </section>

@@ -196,7 +196,7 @@ export default function StudentHomePage() {
                   {date}
                 </span>
               ))}
-              {!attendance?.liturgy.length && <span className="text-xs text-slate-400">لا يوجد سجل بعد</span>}
+              {!fetching && !attendance?.liturgy.length && <span className="text-xs text-slate-400">لا يوجد سجل بعد</span>}
             </div>
           </div>
           <div className="glass rounded-3xl p-4">
@@ -211,7 +211,7 @@ export default function StudentHomePage() {
                   {date}
                 </span>
               ))}
-              {!attendance?.service.length && <span className="text-xs text-slate-400">لا يوجد سجل بعد</span>}
+              {!fetching && !attendance?.service.length && <span className="text-xs text-slate-400">لا يوجد سجل بعد</span>}
             </div>
           </div>
         </div>

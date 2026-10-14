@@ -50,7 +50,9 @@ export default function AttendancePage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [fridayOnly, setFridayOnly] = useState(true);
-  const [busy, setBusy] = useState(false);
+  // Starts true: the mount effect immediately loads, so the empty text never
+  // flashes before the first fetch settles.
+  const [busy, setBusy] = useState(true);
   const [exporting, setExporting] = useState(false);
 
   const canView = can("viewAttendanceLogs");

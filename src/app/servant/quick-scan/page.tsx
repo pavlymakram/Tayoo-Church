@@ -54,11 +54,12 @@ function QuickScanContent() {
   const kind = kindParam === "mass" || kindParam === "service" ? kindParam : null;
   // Manual name search is strictly limited to phase roles.
   const canManualSearch = user?.role === "PHASE_ADMIN" || user?.role === "PHASE_SERVANT";
+  // Client-only values (current time, connectivity) must not affect the first
+  // render — they are applied after mounting to avoid hydration mismatches (#418).
+  const [isMounted, setIsMounted] = useState(false);
   const [now, setNow] = useState(() => new Date());
-  const liturgyClosed = kind === "mass" && !isLiturgyScanOpen(now);
-  const [online, setOnline] = useState(() =>
-    typeof navigator === "undefined" ? true : navigator.onLine
-  );
+  const liturgyClosed = isMounted && kind === "mass" && !isLiturgyScanOpen(now);
+  const [online, setOnline] = useState(true);
   const [queued, setQueued] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const syncingRef = useRef(false);
@@ -77,6 +78,12 @@ function QuickScanContent() {
     } catch {
       /* queue unavailable — scanning still works online */
     }
+  }, []);
+
+  // Apply client-only state (connectivity) only after mounting.
+  useEffect(() => {
+    setIsMounted(true);
+    setOnline(navigator.onLine);
   }, []);
 
   useEffect(() => {

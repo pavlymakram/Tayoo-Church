@@ -19,6 +19,8 @@ type Student = {
   phone: string;
   totalPoints?: number;
   qrCodeId: string;
+  phaseName?: string | null;
+  className?: string | null;
 };
 
 type EventType = {
@@ -173,7 +175,8 @@ export default function ScanPage() {
                 <div>
                   <p className="font-bold">{s.fullName}</p>
                   <p className="text-xs text-slate-500">
-                    {s.grade} · {s.phone}
+                    {s.phaseName ?? s.grade ?? "—"}
+                    {s.className ? ` · فصل ${s.className}` : ""}
                   </p>
                 </div>
                 <span className="text-sm font-black text-[var(--color-gold)]">
