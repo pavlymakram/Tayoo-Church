@@ -17,6 +17,7 @@ import {
   Users,
 } from "lucide-react";
 import { PageShell, StaffBottomNav, BrandMark } from "@/components/layout/shell";
+import { CrossLoader } from "@/components/ui/cross-loader";
 import { useAuth } from "@/components/providers/auth-provider";
 import { roleLabel } from "@/lib/utils";
 import { sectorLabel } from "@/lib/phases";
@@ -77,7 +78,7 @@ export default function ServantHomePage() {
   if (loading || !user) {
     return (
       <PageShell>
-        <div className="py-20 text-center text-slate-500">جارٍ التحميل...</div>
+        <CrossLoader label="جارٍ تحميل لوحة الخدمة..." />
       </PageShell>
     );
   }

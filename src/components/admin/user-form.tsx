@@ -2,8 +2,6 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { Button, Input, Select, TextArea } from "@/components/ui/form";
-import { GRADES } from "@/lib/utils";
-
 export type ManageableUser = {
   id?: string;
   fullName: string;
@@ -71,7 +69,6 @@ export function UserForm({
       phone: String(fd.get("phone") || ""),
       secondaryPhone: String(fd.get("secondaryPhone") || "") || null,
       address: String(fd.get("address") || "") || null,
-      grade: String(fd.get("grade") || "") || null,
       phaseId: phaseId || null,
       classId: String(fd.get("classId") || "") || null,
       birthDate: String(fd.get("birthDate") || "") || null,
@@ -112,14 +109,6 @@ export function UserForm({
         {phaseClasses.map((item) => (
           <option key={item.id} value={item.id}>
             {item.name}
-          </option>
-        ))}
-      </Select>
-
-      <Select name="grade" label="المرحلة الدراسية" defaultValue={initial?.grade || phases[0]?.name || ""}>
-        {GRADES.map((g) => (
-          <option key={g} value={g}>
-            {g}
           </option>
         ))}
       </Select>

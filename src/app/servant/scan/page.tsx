@@ -7,6 +7,7 @@ import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { QrScanner } from "@/components/scanner/qr-scanner";
 import { Button, Input, Select, TextArea } from "@/components/ui/form";
 import { Modal } from "@/components/ui/modal";
+import { CrossLoader } from "@/components/ui/cross-loader";
 import { useAuth } from "@/components/providers/auth-provider";
 import { fetchJsonWithCache } from "@/lib/offline-db";
 import { apiMutate } from "@/lib/offline-mutations";
@@ -32,6 +33,7 @@ export default function ScanPage() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Student[]>([]);
+  const [searching, setSearching] = useState(false);
   const [events, setEvents] = useState<EventType[]>([]);
   const [selected, setSelected] = useState<Student | null>(null);
   const [eventTypeId, setEventTypeId] = useState("");
@@ -75,15 +77,19 @@ export default function ScanPage() {
     setQuery(q);
     if (q.trim().length < 2) {
       setResults([]);
+      setSearching(false);
       return;
     }
+    setSearching(true);
     try {
       const { data } = await fetchJsonWithCache<{ students: Student[] }>(
-        `/api/students?q=${encodeURIComponent(q.trim())}`
+        `/api/students?q=${encodeURIComponent(q.trim())}&limit=20`
       );
       setResults(data.students ?? []);
     } catch {
       /* offline — keep the last results */
+    } finally {
+      setSearching(false);
     }
   }
 
@@ -152,7 +158,12 @@ export default function ScanPage() {
             placeholder="اكتب للبحث..."
           />
           <div className="space-y-2">
-            {results.map((s) => (
+            {searching ? (
+              <div className="glass rounded-2xl">
+                <CrossLoader size="sm" label="جارٍ البحث..." className="py-6" />
+              </div>
+            ) : (
+            results.map((s) => (
               <button
                 key={s.id}
                 type="button"
@@ -169,7 +180,8 @@ export default function ScanPage() {
                   {s.totalPoints ?? 0} طايو
                 </span>
               </button>
-            ))}
+            ))
+            )}
           </div>
         </div>
       </PageShell>

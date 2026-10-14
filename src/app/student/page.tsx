@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { PageShell } from "@/components/layout/shell";
 import { Button, Input } from "@/components/ui/form";
 import { Modal } from "@/components/ui/modal";
+import { CrossLoader } from "@/components/ui/cross-loader";
 import { StudentIdCard } from "@/components/student/id-card";
 import { useAuth } from "@/components/providers/auth-provider";
 
@@ -109,7 +110,7 @@ export default function StudentHomePage() {
   if (loading || !user) {
     return (
       <PageShell>
-        <div className="py-20 text-center text-slate-500">جارٍ التحميل...</div>
+        <CrossLoader label="جارٍ تحميل حساب المخدوم..." />
       </PageShell>
     );
   }

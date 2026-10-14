@@ -7,6 +7,7 @@ import { Pencil, Plus, Search, Trash2, UserPlus2 } from "lucide-react";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { Button, Input, Select } from "@/components/ui/form";
 import { Modal } from "@/components/ui/modal";
+import { CrossLoader } from "@/components/ui/cross-loader";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SECTORS, sectorLabel } from "@/lib/phases";
 import { ROLE_LABELS, roleLabel } from "@/lib/utils";
@@ -65,6 +66,7 @@ export default function StaffManagementPage() {
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [phaseFilter, setPhaseFilter] = useState("");
   const [busy, setBusy] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<StaffRow | null>(null);
@@ -72,6 +74,8 @@ export default function StaffManagementPage() {
   const [deleteTarget, setDeleteTarget] = useState<StaffRow | null>(null);
 
   const canManage = can("managePhaseServants");
+  // Credentials + edit/delete are strictly CHURCH_ADMIN / SUPER_ADMIN only.
+  const canSeeCredentials = user?.role === "CHURCH_ADMIN" || user?.role === "SUPER_ADMIN";
 
   useEffect(() => {
     if (loading) return;
@@ -97,6 +101,8 @@ export default function StaffManagementPage() {
       setMe(data.me ?? null);
     } catch {
       toast.error("تعذر تحميل الخدام — لا يوجد اتصال ولا نسخة محفوظة");
+    } finally {
+      setInitialLoading(false);
     }
   }
 
@@ -243,7 +249,13 @@ export default function StaffManagementPage() {
         </div>
 
         <div className="space-y-2">
-          {rows.map((row) => (
+          {initialLoading ? (
+            <div className="glass rounded-2xl">
+              <CrossLoader label="جارٍ تحميل الخدام..." />
+            </div>
+          ) : (
+            <>
+              {rows.map((row) => (
             <div key={row.id} className="glass rounded-2xl p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -255,9 +267,12 @@ export default function StaffManagementPage() {
                       </span>
                     )}
                   </p>
-                  <p className="mt-1 font-mono text-xs text-slate-600">
-                    {row.username ?? "—"} · {row.initialPassword ?? "كلمة المرور تغيّرت بواسطة الخادم"}
-                  </p>
+                  {/* Credentials are visible ONLY to CHURCH_ADMIN / SUPER_ADMIN. */}
+                  {canSeeCredentials && (
+                    <p className="mt-1 font-mono text-xs text-slate-600">
+                      {row.username ?? "—"} · {row.initialPassword ?? "كلمة المرور تغيّرت بواسطة الخادم"}
+                    </p>
+                  )}
                   <p className="mt-1 text-xs text-slate-500">
                     {roleLabel(row.role)}
                     {row.role === "PHASE_ADMIN" && row.sector ? ` · قطاع ${sectorLabel(row.sector)}` : ""}
@@ -272,6 +287,9 @@ export default function StaffManagementPage() {
                   {row.address && <p className="mt-1 text-xs text-slate-400">{row.address}</p>}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {/* Edit/Delete are visible ONLY to CHURCH_ADMIN / SUPER_ADMIN. */}
+                  {canSeeCredentials && (
+                    <>
                   <Button
                     size="sm"
                     variant="secondary"
@@ -285,12 +303,16 @@ export default function StaffManagementPage() {
                   <Button size="sm" variant="danger" onClick={() => setDeleteTarget(row)}>
                     <Trash2 className="h-3.5 w-3.5" /> حذف
                   </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
-          ))}
-          {rows.length === 0 && (
-            <p className="glass rounded-2xl p-6 text-center text-slate-500">لا يوجد خدام بعد</p>
+              ))}
+              {rows.length === 0 && (
+                <p className="glass rounded-2xl p-6 text-center text-slate-500">لا يوجد خُدام</p>
+              )}
+            </>
           )}
         </div>
       </PageShell>

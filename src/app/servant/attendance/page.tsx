@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { CalendarCheck2, Church, Download, Hourglass } from "lucide-react";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { Button, Input, Select } from "@/components/ui/form";
+import { CrossLoader } from "@/components/ui/cross-loader";
 import { useAuth } from "@/components/providers/auth-provider";
 import { fetchJsonWithCache } from "@/lib/offline-db";
 
@@ -203,6 +204,12 @@ export default function AttendancePage() {
         </div>
 
         <div className="space-y-2">
+          {busy ? (
+            <div className="glass rounded-2xl">
+              <CrossLoader label="جارٍ تحميل سجلات الحضور..." />
+            </div>
+          ) : (
+            <>
           {rows.map((row) => (
             <div key={row.id} className="glass rounded-2xl px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -228,8 +235,10 @@ export default function AttendancePage() {
               </div>
             </div>
           ))}
-          {rows.length === 0 && !busy && (
+          {rows.length === 0 && (
             <p className="glass rounded-2xl p-6 text-center text-slate-500">لا توجد سجلات حضور مطابقة</p>
+          )}
+            </>
           )}
         </div>
       </PageShell>

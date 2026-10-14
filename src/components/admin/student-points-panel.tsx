@@ -5,6 +5,7 @@ import { Pencil, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Input, Select, TextArea } from "@/components/ui/form";
 import { Modal } from "@/components/ui/modal";
+import { CrossLoader } from "@/components/ui/cross-loader";
 import { fetchJsonWithCache } from "@/lib/offline-db";
 import { apiMutate } from "@/lib/offline-mutations";
 
@@ -189,7 +190,7 @@ export function StudentPointsPanel({
       </div>
 
       {loading ? (
-        <p className="text-center text-sm text-slate-500">جارٍ التحميل...</p>
+        <CrossLoader size="sm" label="جارٍ تحميل النقاط..." className="py-6" />
       ) : transactions.length === 0 ? (
         <p className="rounded-2xl bg-white/70 p-4 text-center text-sm text-slate-500">لا توجد حركات</p>
       ) : (

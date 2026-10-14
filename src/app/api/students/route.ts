@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { jsonError, jsonOk } from "@/lib/api";
 import { requireSession } from "@/lib/auth";
-import { sanitizeUser } from "@/lib/sanitize";
 import { resolveScope } from "@/lib/scope";
 
 export async function GET(req: Request) {
@@ -15,6 +14,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim();
   const grade = searchParams.get("grade")?.trim();
+  const address = searchParams.get("address")?.trim();
   const qr = searchParams.get("qr")?.trim();
   const id = searchParams.get("id")?.trim();
   const phaseId = searchParams.get("phaseId")?.trim();
@@ -31,19 +31,52 @@ export async function GET(req: Request) {
   if (qr) {
     const student = await prisma.user.findFirst({
       where: { churchId, role: "STUDENT", qrCodeId: qr, ...scopeFilter },
+      // Selective identity fields keep manual searches near-instant.
+      select: {
+        id: true,
+        fullName: true,
+        grade: true,
+        phone: true,
+        qrCodeId: true,
+        phase: { select: { name: true } },
+        classRoom: { select: { name: true } },
+      },
     });
     if (!student) return jsonError("لم يتم العثور على المخدوم", 404);
     const totalPoints = await sumPoints(student.id, churchId);
-    return jsonOk({ student: { ...sanitizeUser(student), totalPoints } });
+    return jsonOk({
+      student: {
+        ...student,
+        phaseName: student.phase?.name ?? null,
+        className: student.classRoom?.name ?? null,
+        totalPoints,
+      },
+    });
   }
 
   if (id) {
     const student = await prisma.user.findFirst({
       where: { id, churchId, role: "STUDENT", ...scopeFilter },
+      select: {
+        id: true,
+        fullName: true,
+        grade: true,
+        phone: true,
+        qrCodeId: true,
+        phase: { select: { name: true } },
+        classRoom: { select: { name: true } },
+      },
     });
     if (!student) return jsonError("لم يتم العثور على المخدوم", 404);
     const totalPoints = await sumPoints(student.id, churchId);
-    return jsonOk({ student: { ...sanitizeUser(student), totalPoints } });
+    return jsonOk({
+      student: {
+        ...student,
+        phaseName: student.phase?.name ?? null,
+        className: student.classRoom?.name ?? null,
+        totalPoints,
+      },
+    });
   }
 
   const where = {
@@ -51,6 +84,7 @@ export async function GET(req: Request) {
       role: "STUDENT",
       ...scopeFilter,
       ...(grade ? { grade } : {}),
+      ...(address ? { address } : {}),
       ...(phaseId ? { phaseId } : {}),
       ...(classId ? { classId } : {}),
       ...(q
@@ -63,25 +97,41 @@ export async function GET(req: Request) {
           }
         : {}),
     };
+  // Batch fetching: page + count + balances load together for instant response.
   const [students, total] = await Promise.all([prisma.user.findMany({
     where,
     orderBy: { fullName: "asc" },
     skip: (page - 1) * limit,
     take: limit,
+    // Selective fields: lists never need hashes, birth data, or job details.
+    select: {
+      id: true,
+      fullName: true,
+      grade: true,
+      phone: true,
+      address: true,
+      qrCodeId: true,
+      phase: { select: { name: true } },
+      classRoom: { select: { name: true } },
+    },
   }), prisma.user.count({ where })]);
 
   const ids = students.map((s) => s.id);
-  const aggregates = await prisma.pointTransaction.groupBy({
-    by: ["studentId"],
-    where: { churchId, studentId: { in: ids } },
-    _sum: { pointsAmount: true },
-  });
+  const aggregates = ids.length
+    ? await prisma.pointTransaction.groupBy({
+        by: ["studentId"],
+        where: { churchId, studentId: { in: ids } },
+        _sum: { pointsAmount: true },
+      })
+    : [];
   const pointsMap = new Map(aggregates.map((a) => [a.studentId, a._sum.pointsAmount ?? 0]));
 
   return jsonOk({
     pagination: { page, limit, total, hasMore: page * limit < total },
     students: students.map((s) => ({
-      ...sanitizeUser(s),
+      ...s,
+      phaseName: s.phase?.name ?? null,
+      className: s.classRoom?.name ?? null,
       totalPoints: pointsMap.get(s.id) ?? 0,
     })),
   });

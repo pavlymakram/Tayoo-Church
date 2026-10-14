@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { KeyRound, ShieldCheck } from "lucide-react";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { Button, Input } from "@/components/ui/form";
+import { CrossLoader } from "@/components/ui/cross-loader";
 import { useAuth } from "@/components/providers/auth-provider";
 import { ROLE_LABELS, roleLabel } from "@/lib/utils";
 import { sectorLabel } from "@/lib/phases";
@@ -53,7 +54,7 @@ export default function ProfilePage() {
   if (loading || !user) {
     return (
       <PageShell withStaffNav>
-        <div className="py-20 text-center text-slate-500">جارٍ التحميل...</div>
+        <CrossLoader label="جارٍ تحميل الحساب..." />
       </PageShell>
     );
   }

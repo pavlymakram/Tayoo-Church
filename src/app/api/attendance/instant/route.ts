@@ -24,7 +24,16 @@ export async function POST(req: Request) {
   const rawKind: unknown = body?.kind;
   const kind: keyof typeof eventNames | null = rawKind === "mass" || rawKind === "service" ? rawKind : null;
   const qrCodeId = typeof body?.qrCodeId === "string" ? body.qrCodeId.trim() : "";
-  if (!kind || !qrCodeId) return jsonError("بيانات المسح غير صالحة");
+  // Manual name-search path: the client confirms a student id from the scoped
+  // search results and logs attendance identically to a QR scan.
+  const studentId = typeof body?.studentId === "string" ? body.studentId.trim() : "";
+  const manual = !qrCodeId && !!studentId;
+  if (!kind || (!qrCodeId && !studentId)) return jsonError("بيانات المسح غير صالحة");
+
+  // Manual logging is strictly limited to phase roles (never church admins).
+  if (manual && session.role !== "PHASE_ADMIN" && session.role !== "PHASE_SERVANT" && session.role !== "SUPER_ADMIN") {
+    return jsonError("لا تملك صلاحية التسجيل اليدوي", 403);
+  }
 
   // Offline-safe: synced scans carry their original local scan moment, and the
   // Liturgy cutoff binds to THAT moment — never to the later sync time.
@@ -44,15 +53,25 @@ export async function POST(req: Request) {
   const scope = await resolveScope(session);
   const churchId = session.churchId;
 
-  const church = await prisma.church.findUnique({ where: { id: churchId } });
-  const student = await prisma.user.findFirst({
-    where: {
-      churchId,
-      role: "STUDENT",
-      qrCodeId,
-      ...(scope.churchWide ? {} : { phaseId: { in: scope.phaseIds } }),
-    },
-  });
+  // Batched fetch: church config + scoped student in parallel for instant response.
+  const [church, student] = await Promise.all([
+    prisma.church.findUnique({ where: { id: churchId }, select: { id: true, isActive: true, defaultMassPoints: true, defaultServicePoints: true } }),
+    prisma.user.findFirst({
+      where: {
+        churchId,
+        role: "STUDENT",
+        ...(qrCodeId ? { qrCodeId } : { id: studentId }),
+        ...(scope.churchWide ? {} : { phaseId: { in: scope.phaseIds } }),
+      },
+      // Selective fields: manual search + scan response need identity only.
+      select: {
+        id: true,
+        fullName: true,
+        phase: { select: { name: true } },
+        classRoom: { select: { name: true } },
+      },
+    }),
+  ]);
   if (!church || !church.isActive) return jsonError("ترخيص الكنيسة موقوف", 403);
   if (!student) return jsonError("لم يتم العثور على المخدوم في نطاق خدمتك", 404);
 

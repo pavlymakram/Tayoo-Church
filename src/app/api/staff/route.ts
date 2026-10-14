@@ -26,9 +26,13 @@ const staffInclude = {
 
 type StaffRow = Prisma.UserGetPayload<{ include: typeof staffInclude }>;
 
-function toRow(user: StaffRow) {
+function toRow(user: StaffRow, opts?: { hideCredentials?: boolean }) {
+  const base = sanitizeUser(user);
   return {
-    ...sanitizeUser(user),
+    ...base,
+    // Strict role control: credentials leave the server only for privileged roles.
+    username: opts?.hideCredentials ? null : base.username,
+    initialPassword: opts?.hideCredentials ? null : base.initialPassword,
     phaseName: user.phase?.name ?? null,
     phaseAbbreviation: user.phase?.abbreviation ?? null,
     className: user.classRoom?.name ?? null,
@@ -101,13 +105,15 @@ export async function GET(req: Request) {
 
   const visiblePhases = scope.churchWide ? phases : phases.filter((p) => scope.phaseIds.includes(p.id));
 
+  // Credentials are served ONLY to CHURCH_ADMIN / SUPER_ADMIN.
+  const hideCredentials = scope.role !== "CHURCH_ADMIN" && scope.role !== "SUPER_ADMIN";
   const rows = staff
     .filter((member) => isStaffInScope(member, scope))
     .filter((member) => (q ? member.fullName.toLowerCase().includes(q) || member.phone.includes(q) || (member.username ?? "").includes(q) : true))
     .filter((member) => (role && role !== "ALL" ? member.role === role : true))
     .filter((member) => (phaseId ? member.phaseId === phaseId : true))
     .filter((member) => (classId ? member.classId === classId : true))
-    .map(toRow);
+    .map((member) => toRow(member, { hideCredentials }));
 
   return jsonOk({
     staff: rows,
@@ -248,6 +254,11 @@ export async function PATCH(req: Request) {
   const { session, error } = await requireSession(["SUPER_ADMIN", "CHURCH_ADMIN", "PHASE_ADMIN"]);
   if (error || !session) return error!;
 
+  // Edit servant management action: strictly CHURCH_ADMIN / SUPER_ADMIN.
+  if (session.role !== "CHURCH_ADMIN" && session.role !== "SUPER_ADMIN") {
+    return jsonError("تعديل الخدام متاح لأدمن الكنيسة فقط", 403);
+  }
+
   const body = await readJson(req);
   if (!body?.id) return jsonError("معرف الخادم مطلوب");
   const parsed = parseBody(staffUpsertSchema, body);
@@ -313,6 +324,11 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   const { session, error } = await requireSession(["SUPER_ADMIN", "CHURCH_ADMIN", "PHASE_ADMIN"]);
   if (error || !session) return error!;
+
+  // Delete servant management action: strictly CHURCH_ADMIN / SUPER_ADMIN.
+  if (session.role !== "CHURCH_ADMIN" && session.role !== "SUPER_ADMIN") {
+    return jsonError("حذف الخدام متاح لأدمن الكنيسة فقط", 403);
+  }
 
   const id = new URL(req.url).searchParams.get("id")?.trim();
   if (!id) return jsonError("معرف الخادم مطلوب");

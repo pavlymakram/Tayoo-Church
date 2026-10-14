@@ -49,6 +49,7 @@ export async function GET(req: Request) {
 
   const q = searchParams.get("q")?.trim();
   const grade = searchParams.get("grade")?.trim();
+  const address = searchParams.get("address")?.trim();
   const role = searchParams.get("role")?.trim();
   const phaseId = searchParams.get("phaseId")?.trim();
   const classId = searchParams.get("classId")?.trim();
@@ -86,6 +87,7 @@ export async function GET(req: Request) {
     role: roleFilter,
     ...scopeFilter,
     ...(grade ? { grade } : {}),
+    ...(address ? { address } : {}),
     ...(phaseId ? { phaseId } : {}),
     ...(classId ? { classId } : {}),
     ...(q
@@ -99,7 +101,7 @@ export async function GET(req: Request) {
       : {}),
   };
 
-  const [users, total, phases, classes] = await Promise.all([
+  const [users, total, phases, classes, addressRows] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: [{ role: "asc" }, { fullName: "asc" }],
@@ -118,6 +120,18 @@ export async function GET(req: Request) {
       orderBy: { name: "asc" },
       select: { id: true, name: true, phaseId: true },
     }),
+    // Unique address/area values for the المنطقة/العنوان dropdown (phase roles).
+    prisma.user.findMany({
+      where: {
+        churchId,
+        role: "STUDENT",
+        ...scopeFilter,
+        address: { not: null },
+      },
+      select: { address: true },
+      distinct: ["address"],
+      take: 300,
+    }),
   ]);
 
   const studentIds = users.filter((u) => u.role === "STUDENT").map((u) => u.id);
@@ -135,6 +149,10 @@ export async function GET(req: Request) {
     pagination: { page, limit, total, hasMore: page * limit < total },
     phases,
     classes,
+    addresses: addressRows
+      .map((r) => (r.address ?? "").trim())
+      .filter((a) => a.length > 0)
+      .sort((a, b) => a.localeCompare(b, "ar")),
     me: {
       role: scope.role,
       sector: scope.sector,

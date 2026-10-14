@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { Button, Input, Select } from "@/components/ui/form";
 import { Modal } from "@/components/ui/modal";
+import { CrossLoader } from "@/components/ui/cross-loader";
 import { UserForm, type ClassChoice, type ManageableUser, type PhaseChoice } from "@/components/admin/user-form";
 import { StudentPointsPanel } from "@/components/admin/student-points-panel";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -47,6 +48,7 @@ type UsersResponse = {
   users: UserRow[];
   phases: PhaseChoice[];
   classes: ClassChoice[];
+  addresses?: string[];
 };
 
 const USERS_CACHE_TTL = 15_000;
@@ -58,9 +60,11 @@ export default function StudentsPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [phases, setPhases] = useState<PhaseChoice[]>([]);
   const [classes, setClasses] = useState<ClassChoice[]>([]);
+  const [addresses, setAddresses] = useState<string[]>([]);
 
   const [q, setQ] = useState("");
   const [grade, setGrade] = useState("");
+  const [addressFilter, setAddressFilter] = useState("");
   const [phaseId, setPhaseId] = useState("");
   const [classId, setClassId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -78,6 +82,8 @@ export default function StudentsPage() {
   const canManage = can("manageStudents");
   // Excel import is exclusive to Phase Admins (PHASE_ADMIN / أدمن القطاع).
   const isPhaseAdmin = user?.role === "PHASE_ADMIN";
+  // Address/area filter is exclusive to phase roles (PHASE_ADMIN / PHASE_SERVANT).
+  const canFilterByAddress = user?.role === "PHASE_ADMIN" || user?.role === "PHASE_SERVANT";
 
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{
@@ -99,6 +105,7 @@ export default function StudentsPage() {
     const params = new URLSearchParams();
     if (q.trim()) params.set("q", q.trim());
     if (grade) params.set("grade", grade);
+    if (canFilterByAddress && addressFilter) params.set("address", addressFilter);
     if (phaseId) params.set("phaseId", phaseId);
     if (classId) params.set("classId", classId);
     return `/api/users?${params.toString()}`;
@@ -108,6 +115,8 @@ export default function StudentsPage() {
     setUsers((data.users as UserRow[]).filter((row) => row.role === "STUDENT"));
     setPhases(data.phases);
     setClasses(data.classes);
+    // Dynamically populated from student records (manual entry + Excel import).
+    if (Array.isArray(data.addresses)) setAddresses(data.addresses);
   }
 
   async function fetchUsers(url: string): Promise<UsersResponse> {
@@ -150,7 +159,7 @@ export default function StudentsPage() {
     const id = window.setTimeout(() => void load(), 350);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, grade, phaseId, classId]);
+  }, [q, grade, addressFilter, phaseId, classId]);
 
   // Refresh after the background sync flushes locally saved operations.
   useEffect(() => {
@@ -478,6 +487,16 @@ return (
               </option>
             ))}
           </Select>
+          {canFilterByAddress && (
+            <Select label="المنطقة / العنوان" value={addressFilter} onChange={(e) => setAddressFilter(e.target.value)}>
+              <option value="">كل المناطق</option>
+              {addresses.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </Select>
+          )}
           <div className="sm:col-span-2 lg:col-span-3">
             <Button type="button" variant="secondary" onClick={() => void load()} className="w-full sm:w-auto">
               <Search className="h-4 w-4" /> تطبيق الفلاتر
@@ -486,6 +505,12 @@ return (
         </div>
 
         <div className="space-y-2">
+          {listLoading ? (
+            <div className="glass rounded-2xl">
+              <CrossLoader label="جارٍ تحميل المخدومين..." />
+            </div>
+          ) : (
+            <>
           {users.map((row) => (
             <div key={row.id} className="glass rounded-2xl p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -530,7 +555,9 @@ return (
               </div>
             </div>
           ))}
-          {users.length === 0 && <p className="glass rounded-2xl p-8 text-center text-slate-500">لا يوجد مخدومين</p>}
+          {users.length === 0 && !listLoading && <p className="glass rounded-2xl p-8 text-center text-slate-500">لا يوجد مخدومين</p>}
+            </>
+          )}
         </div>
       </PageShell>
       <StaffBottomNav />

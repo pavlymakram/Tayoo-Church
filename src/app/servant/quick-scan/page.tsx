@@ -4,8 +4,12 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { Search } from "lucide-react";
 import { PageShell, StaffBottomNav } from "@/components/layout/shell";
 import { QrScanner } from "@/components/scanner/qr-scanner";
+import { Button, Input } from "@/components/ui/form";
+import { Modal } from "@/components/ui/modal";
+import { CrossLoader } from "@/components/ui/cross-loader";
 import { useAuth } from "@/components/providers/auth-provider";
 import { LITURGY_CUTOFF_MESSAGE, isLiturgyScanOpen } from "@/lib/attendance";
 import {
@@ -20,7 +24,7 @@ export default function QuickScanPage() {
     <Suspense
       fallback={
         <PageShell withStaffNav>
-          <p className="py-12 text-center text-slate-500">جارٍ التحميل...</p>
+          <CrossLoader label="جارٍ تحميل المسح السريع..." />
         </PageShell>
       }
     >
@@ -34,12 +38,22 @@ const LABELS = {
   service: { title: "مسح الحضور", subtitle: "الخدمة / مدارس الأحد" },
 } as const;
 
+type ManualStudent = {
+  id: string;
+  fullName: string;
+  phaseName?: string | null;
+  phaseAbbreviation?: string | null;
+  className?: string | null;
+};
+
 function QuickScanContent() {
   const params = useSearchParams();
   const router = useRouter();
   const { user, loading, can } = useAuth();
   const kindParam = params.get("kind");
   const kind = kindParam === "mass" || kindParam === "service" ? kindParam : null;
+  // Manual name search is strictly limited to phase roles.
+  const canManualSearch = user?.role === "PHASE_ADMIN" || user?.role === "PHASE_SERVANT";
   const [now, setNow] = useState(() => new Date());
   const liturgyClosed = kind === "mass" && !isLiturgyScanOpen(now);
   const [online, setOnline] = useState(() =>
@@ -48,6 +62,14 @@ function QuickScanContent() {
   const [queued, setQueued] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const syncingRef = useRef(false);
+
+  // Manual name search state (نعم/لا confirmation → identical instant logging).
+  const [manualQuery, setManualQuery] = useState("");
+  const [manualResults, setManualResults] = useState<ManualStudent[]>([]);
+  const [manualSearching, setManualSearching] = useState(false);
+  const [confirmTarget, setConfirmTarget] = useState<ManualStudent | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const searchTimer = useRef<number | null>(null);
 
   const refreshQueue = useCallback(async () => {
     try {
@@ -80,6 +102,11 @@ function QuickScanContent() {
   }, [user, loading, router, can]);
 
   async function scan(qrCodeId: string) {
+    await logAttendance({ qrCodeId });
+  }
+
+  /** Shared instant logger — QR scans and manual نعم confirmations are identical. */
+  async function logAttendance(payload: { qrCodeId?: string; studentId?: string }) {
     const now = new Date();
     if (kind === "mass" && !isLiturgyScanOpen(now)) {
       toast.error(LITURGY_CUTOFF_MESSAGE);
@@ -89,7 +116,7 @@ function QuickScanContent() {
       const res = await fetch("/api/attendance/instant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind, qrCodeId }),
+        body: JSON.stringify({ kind, ...payload }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "تعذر تسجيل الحضور");
@@ -103,15 +130,54 @@ function QuickScanContent() {
         err instanceof TypeError ||
         (typeof navigator !== "undefined" && !navigator.onLine) ||
         (err instanceof Error && /fetch|network|load failed/i.test(err.message));
-      if (!offline || !kind) {
+      if (!offline || !kind || !payload.qrCodeId) {
         toast.error(err instanceof Error ? err.message : "تعذر تسجيل الحضور");
         return;
       }
     }
-    await enqueueOfflineScan({ kind: kind as OfflineScanKind, qrCodeId });
+    await enqueueOfflineScan({ kind: kind as OfflineScanKind, qrCodeId: payload.qrCodeId as string });
     await refreshQueue();
     if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([60, 40, 60]);
     toast.warning("لا يوجد اتصال — حُفظ المسح في طابور دون اتصال وسيُزامَن تلقائياً");
+  }
+
+  /** Manual name search (phase roles only) — debounced, scoped server-side. */
+  function onManualQueryChange(value: string) {
+    setManualQuery(value);
+    if (searchTimer.current) window.clearTimeout(searchTimer.current);
+    if (value.trim().length < 2) {
+      setManualResults([]);
+      setManualSearching(false);
+      return;
+    }
+    setManualSearching(true);
+    searchTimer.current = window.setTimeout(() => void runManualSearch(value.trim()), 300);
+  }
+
+  async function runManualSearch(term: string) {
+    try {
+      const res = await fetch(`/api/users?q=${encodeURIComponent(term)}&role=STUDENT&limit=20`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "تعذر البحث");
+      setManualResults((data.users ?? []).slice(0, 20));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "تعذر البحث");
+      setManualResults([]);
+    } finally {
+      setManualSearching(false);
+    }
+  }
+
+  /** نعم → log instantly like a QR scan. لا → close and return to results. */
+  async function confirmManualAttendance() {
+    if (!confirmTarget || !kind) return;
+    setConfirmBusy(true);
+    try {
+      await logAttendance({ studentId: confirmTarget.id });
+      setConfirmTarget(null);
+    } finally {
+      setConfirmBusy(false);
+    }
   }
 
   const runSync = useCallback(
@@ -249,10 +315,83 @@ function QuickScanContent() {
                 </button>
               </div>
             </div>
+
+            {/* Manual name search — PHASE_ADMIN / PHASE_SERVANT only. */}
+            {canManualSearch && !liturgyClosed && (
+              <div className="glass mt-4 rounded-3xl p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Search className="h-5 w-5 text-[var(--color-navy)]" />
+                  <h2 className="text-base font-black text-[var(--color-navy)]">بحث يدوي بالاسم</h2>
+                </div>
+                <Input
+                  label="ابحث عن المخدوم بالاسم"
+                  value={manualQuery}
+                  onChange={(e) => onManualQueryChange(e.target.value)}
+                  placeholder="اكتب أول حروف الاسم..."
+                />
+                {manualSearching ? (
+                  <CrossLoader size="sm" label="جارٍ البحث..." className="py-6" />
+                ) : manualQuery.trim().length >= 2 ? (
+                  <div className="mt-3 space-y-2">
+                    {manualResults.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setConfirmTarget(s)}
+                        className="flex w-full items-center justify-between gap-2 rounded-2xl bg-white px-4 py-3 text-right shadow-sm transition hover:shadow"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-black text-[var(--color-navy)]">{s.fullName}</span>
+                          <span className="mt-1 block text-xs font-bold text-slate-500">
+                            المرحلة: {s.phaseName ?? "—"} · الفصل: {s.className ?? "—"}
+                          </span>
+                        </span>
+                        <span className="shrink-0 rounded-full bg-[var(--color-gold)]/15 px-3 py-1 text-xs font-black text-[var(--color-gold)]">
+                          تسجيل
+                        </span>
+                      </button>
+                    ))}
+                    {manualResults.length === 0 && (
+                      <p className="rounded-2xl bg-white p-4 text-center text-sm font-bold text-slate-500">
+                        لا توجد نتائج مطابقة
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
         )}
       </PageShell>
       <StaffBottomNav />
+
+      {/* Confirmation: نعم logs instantly like a QR scan, لا returns to results. */}
+      <Modal open={!!confirmTarget} onClose={() => setConfirmTarget(null)} title="تأكيد تسجيل الحضور">
+        {confirmTarget && (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-white p-4">
+              <p className="font-black text-[var(--color-navy)]">{confirmTarget.fullName}</p>
+              <p className="mt-1 text-sm font-bold text-slate-500">
+                المرحلة: {confirmTarget.phaseName ?? "—"} · الفصل: {confirmTarget.className ?? "—"}
+              </p>
+              <p className="mt-2 text-sm text-slate-600">هل تريد تسجيل حضور هذا المخدوم وإضافة نقاط طايو؟</p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                className="flex-1 bg-emerald-700 hover:bg-emerald-800"
+                disabled={confirmBusy}
+                onClick={() => void confirmManualAttendance()}
+              >
+                {confirmBusy ? "جارٍ التسجيل..." : "نعم"}
+              </Button>
+              <Button type="button" variant="secondary" className="flex-1" onClick={() => setConfirmTarget(null)}>
+                لا
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </>
   );
 }
